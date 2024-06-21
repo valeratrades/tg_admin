@@ -1,37 +1,31 @@
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+use v_utils::io::ExpandedPath;
 
-#[derive(Parser)]
+#[derive(Parser, Debug, Default, Clone)]
 #[command(author, version, about, long_about = None)]
-struct Cli {
+pub struct Cli {
+	#[arg(long, default_value = "~/.config/tg_config.toml")]
+	config: ExpandedPath,
 	#[command(subcommand)]
 	command: Commands,
 }
 #[derive(Subcommand)]
-enum Commands {
-	/// Start the thing
+pub enum Commands {
+	/// Start the server allowing to change the config at the specified path using telegram.
 	///Ex
 	///```sh
-	///PROJECT_NAME_PLACEHOLDER start -w "!"
+	///tg_config start -t "${THE_BOT_TOKEN}" ./config/config.json
 	///```
 	Start(StartArgs),
 }
 
 #[derive(Args)]
-#[command(group(
-    ArgGroup::new("channel")
-        .required(true)
-        .args(&["world", "rust"]),
-))]
-struct StartArgs {
-	/// Hello to world
+pub struct StartArgs {
+	/// Path to the target file
+	path: ExpandedPath,
+	/// Override token in config
 	#[arg(short, long)]
-	world: bool,
-	/// Hello to rust
-	#[arg(short, long)]
-	rust: bool,
-
-	/// Message to send after hello
-	after_hello_message: Vec<String>,
+	token: Option<String>,
 }
 
 fn main() {
