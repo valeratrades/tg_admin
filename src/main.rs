@@ -1,7 +1,9 @@
 use clap::{Args, Parser, Subcommand};
+use settings::Settings;
 use v_utils::io::ExpandedPath;
+pub mod settings;
 
-#[derive(Parser, Debug, Default, Clone)]
+#[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
 	#[arg(long, default_value = "~/.config/tg_config.toml")]
@@ -9,7 +11,7 @@ pub struct Cli {
 	#[command(subcommand)]
 	command: Commands,
 }
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
 	/// Start the server allowing to change the config at the specified path using telegram.
 	///Ex
@@ -18,29 +20,34 @@ pub enum Commands {
 	///```
 	Start(StartArgs),
 }
+impl Default for Commands {
+	fn default() -> Self {
+		Self::Start(StartArgs::default())
+	}
+}
 
-#[derive(Args)]
+#[derive(Args, Debug, Default)]
 pub struct StartArgs {
 	/// Path to the target file
 	path: ExpandedPath,
 	/// Override token in config
 	#[arg(short, long)]
-	token: Option<String>,
+	tg_token: Option<String>,
 }
 
 fn main() {
 	let cli = Cli::parse();
-	match cli.command {
-		Commands::Start(args) => {
-			let hello_target = match (args.world, args.rust) {
-				(true, false) => "World",
-				(false, true) => "Rust",
-				(true, true) => panic!("Cannot hello two things"),
-				(false, false) => panic!("Specify what to hello"),
-			};
+	let app_config = match Settings::new_with_cli(&cli) {
+		Ok(config) => config,
+		Err(e) => {
+			eprintln!("Error: Failed to initialize settings with CLI arguments. Details: {}", e);
+			std::process::exit(1);
+		}
+	};
 
-			let message = format!("Hello, {hello_target}{}", &args.after_hello_message.join(""));
-			println!("{message}");
+	match &cli.command {
+		Commands::Start(args) => {
+			unimplemented!();
 		}
 	}
 }

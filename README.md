@@ -5,6 +5,9 @@
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/valeratrades/PROJECT_NAME_PLACEHOLDER/ci.yml?branch=master&style=for-the-badge&style=flat-square" height="20">](https://github.com/valeratrades/PROJECT_NAME_PLACEHOLDER/actions?query=branch%3Amaster) <!--NB: Won't find it if repo is private-->
 [![Lines Of Code](https://tokei.rs/b1/github/valeratrades/PROJECT_NAME_PLACEHOLDER?category=code)](https://github.com/valeratrades/PROJECT_NAME_PLACEHOLDER/tree/master/src)
 
+# tg config
+Util to control configuration settings via a telegram bot.
+
 <!-- markdownlint-disable -->
 <details>
   <summary>
