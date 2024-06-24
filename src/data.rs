@@ -66,6 +66,7 @@ impl Data {
 	}
 
 	pub fn at(&self, level: &Level) -> Option<JsonValue> {
+		dbg!(&level.to_vec());
 		let mut current = &self.inner;
 		for part in level.to_vec() {
 			current = current.get(&part)?;
@@ -98,7 +99,12 @@ impl Level {
 	}
 
 	fn to_vec(&self) -> Vec<String> {
-		self.0.split("::").map(String::from).collect()
+		let v = self.0.split("::").map(String::from).collect();
+		if v == vec![""] {
+			vec![]
+		} else {
+			v
+		}
 	}
 
 	pub fn to_string(&self) -> String {

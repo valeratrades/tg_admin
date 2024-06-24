@@ -1,5 +1,5 @@
 [package]
-name = "tg_config"
+name = "tg_admin"
 version = "0.1.0"
 edition = "2021"
 

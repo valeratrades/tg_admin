@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use clap::{Args, Parser, Subcommand};
 use settings::Settings;
 use v_utils::io::ExpandedPath;
@@ -8,7 +10,7 @@ pub mod telegram;
 #[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-	#[arg(long, default_value = "~/.config/tg_config.toml")]
+	#[arg(long, default_value = "~/.config/tg_admin.toml")]
 	config: ExpandedPath,
 	#[command(subcommand)]
 	command: Commands,
@@ -20,21 +22,24 @@ pub enum Commands {
 	///```sh
 	///tg_config start -t "${THE_BOT_TOKEN}" ./config/config.json
 	///```
-	Start(StartArgs),
+	Manage(ManageArgs),
 }
 impl Default for Commands {
 	fn default() -> Self {
-		Self::Start(StartArgs::default())
+		Self::Manage(ManageArgs::default())
 	}
 }
 
 #[derive(Args, Debug, Default)]
-pub struct StartArgs {
+pub struct ManageArgs {
 	/// Path to the target file
 	path: ExpandedPath,
 	/// Override token in config
 	#[arg(short, long)]
 	tg_token: Option<String>,
+	/// Users with admin rights
+	#[arg(short, long)]
+	admin_list: Option<Vec<i64>>,
 }
 
 #[tokio::main]
@@ -50,7 +55,7 @@ async fn main() {
 	};
 
 	match &cli.command {
-		Commands::Start(args) => {
+		Commands::Manage(args) => {
 			let target_data = match data::Data::load(args.path.as_ref()) {
 				Ok(data) => data,
 				Err(e) => {
@@ -58,7 +63,7 @@ async fn main() {
 					std::process::exit(1);
 				}
 			};
-			telegram::start(&app_config, target_data).await.unwrap_or_else(|e| {
+			telegram::start(Arc::new(app_config), target_data).await.unwrap_or_else(|e| {
 				eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
 				std::process::exit(1);
 			})

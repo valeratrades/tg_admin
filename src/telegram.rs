@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::data::{Data, Level};
 use crate::settings::Settings;
 use anyhow::Result;
@@ -8,15 +10,23 @@ use teloxide::types::Message;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 #[tracing::instrument]
-pub async fn start(settings: &Settings, data: Data) -> Result<()> {
+pub async fn start(settings: Arc<Settings>, data: Data) -> Result<()> {
 	let token = &settings.tg_token;
 
 	let bot = Bot::new(token);
 	teloxide::repl(bot, move |message: Message, bot: Bot| {
 		let data = data.clone();
 		let level = Level::default();
+		let settings = Arc::clone(&settings);
 
 		async move {
+			if let Some(admin_list) = &settings.admin_list {
+				if !admin_list.contains(&message.chat.id.0) {
+					bot.send_message(message.chat.id, "Access denied.").await?;
+					return respond(());
+				}
+			}
+
 			if let Some(text) = message.text() {
 				if text == "/admin" {
 					let markup = render_markup(&data, &level);
