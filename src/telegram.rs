@@ -41,30 +41,6 @@ pub async fn start(settings: Arc<Settings>, data: Data) -> Result<()> {
 }
 
 fn render_markup(data: &Data, level: &Level) -> InlineKeyboardMarkup {
-	let items = level_representation(&data.at(level).unwrap());
-	create_markup(items, level)
-}
-
-//TODO!: should send callbacks with full path to the new subarea of the data
-fn create_markup(items: Vec<MarkdownItem>, level: &Level) -> InlineKeyboardMarkup {
-	let mut keyboard = vec![];
-
-	for item in items {
-		let callback_data = level.join(&item.key).into_string();
-		let button = InlineKeyboardButton::callback(item.full_text, callback_data);
-		keyboard.push(vec![button]);
-	}
-
-	InlineKeyboardMarkup::new(keyboard)
-}
-
-#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize)]
-struct MarkdownItem {
-	pub key: String,
-	pub full_text: String,
-}
-
-fn level_representation(current_level: &Value) -> Vec<MarkdownItem> {
 	fn escape_markdown(s: &str) -> String {
 		//s.replace('_', r"\_")
 		//	.replace('*', r"\*")
@@ -86,20 +62,29 @@ fn level_representation(current_level: &Value) -> Vec<MarkdownItem> {
 		s.to_string()
 	}
 
-	let mut result = Vec::new();
+	let mut keyboard = Vec::new();
+	let current_level = &data.at(level).unwrap();
 	if let Value::Object(map) = current_level {
+		if !level.is_top() {
+			let mut l = level.clone();
+			l.pop();
+			let callback_data = l.to_string();
+			let button = InlineKeyboardButton::callback("..", callback_data);
+			keyboard.push(vec![button]);
+		}
 		for (key, val) in map {
 			let f = match val {
 				Value::Object(_) => format!("`{}` {}", escape_markdown("{}"), escape_markdown(key)),
 				Value::Array(_) => format!("`{}` {}", escape_markdown("[]"), escape_markdown(key)),
 				_ => format!("{}: `{}`", escape_markdown(key), escape_markdown(&val.to_string())),
 			};
-			let markdown_item = MarkdownItem::new(key.to_string(), f);
-			result.push(markdown_item);
+
+			let callback_data = level.join(key).into_string();
+			let button = InlineKeyboardButton::callback(f, callback_data);
+			keyboard.push(vec![button]);
 		}
 	}
-
-	result
+	InlineKeyboardMarkup::new(keyboard)
 }
 
 #[cfg(test)]
@@ -107,8 +92,7 @@ mod tests {
 	use super::*;
 	use serde_json::json;
 
-	#[test]
-	fn test_level_representation() {
+	fn gen_data() -> (Data, Level) {
 		let json_value = json!({
 			"name": "Alice",
 			"age": 25,
@@ -118,30 +102,79 @@ mod tests {
 			},
 			"emails": ["alice@example.com", "a@example.com"]
 		});
+		(Data::mock(json_value), Level::default())
+	}
 
-		let formatted_output = level_representation(&json_value);
+	#[test]
+	fn test_top_level_representation() {
+		let (data, level) = gen_data();
+		let r = render_markup(&data, &level);
 
 		insta::assert_json_snapshot!(
-			formatted_output,
+			r,
 			@r###"
-  [
-    {
-      "key": "address",
-      "full_text": "**\\{\\}** address"
-    },
-    {
-      "key": "age",
-      "full_text": "age: **25**"
-    },
-    {
-      "key": "emails",
-      "full_text": "**\\[\\]** emails"
-    },
-    {
-      "key": "name",
-      "full_text": "name: **\"Alice\"**"
-    }
-  ]
+  {
+    "inline_keyboard": [
+      [
+        {
+          "text": "`{}` address",
+          "callback_data": "address"
+        }
+      ],
+      [
+        {
+          "text": "age: `25`",
+          "callback_data": "age"
+        }
+      ],
+      [
+        {
+          "text": "`[]` emails",
+          "callback_data": "emails"
+        }
+      ],
+      [
+        {
+          "text": "name: `\"Alice\"`",
+          "callback_data": "name"
+        }
+      ]
+    ]
+  }
+  "###
+		);
+	}
+
+	#[test]
+	fn test_nested_level_representation() {
+		let (data, mut level) = gen_data();
+		level.push("address");
+		let r = render_markup(&data, &level);
+		insta::assert_json_snapshot!(
+			r,
+			@r###"
+  {
+    "inline_keyboard": [
+      [
+        {
+          "text": "..",
+          "callback_data": "address"
+        }
+      ],
+      [
+        {
+          "text": "city: `\"Elsewhere\"`",
+          "callback_data": "address::city"
+        }
+      ],
+      [
+        {
+          "text": "street: `\"456 Another St\"`",
+          "callback_data": "address::street"
+        }
+      ]
+    ]
+  }
   "###
 		);
 	}

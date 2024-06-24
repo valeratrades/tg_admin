@@ -72,6 +72,10 @@ impl Data {
 		}
 		Some(current.clone())
 	}
+
+	pub fn mock(value: JsonValue) -> Self {
+		Self::new(value, PathBuf::new())
+	}
 }
 impl AsRef<JsonValue> for Data {
 	fn as_ref(&self) -> &JsonValue {
@@ -83,8 +87,16 @@ impl AsRef<JsonValue> for Data {
 pub struct Level(String);
 impl Level {
 	pub fn push(&mut self, part: &str) {
-		self.0.push_str("::");
+		if !self.0.is_empty() {
+			self.0.push_str("::");
+		}
 		self.0.push_str(part);
+	}
+
+	pub fn pop(&mut self) {
+		if let Some(pos) = self.0.rfind("::") {
+			self.0.truncate(pos);
+		}
 	}
 
 	pub fn join(&self, part: &str) -> Self {
