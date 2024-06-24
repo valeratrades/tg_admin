@@ -37,7 +37,9 @@ pub struct StartArgs {
 	tg_token: Option<String>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
+	v_utils::utils::init_subscriber();
 	let cli = Cli::parse();
 	let app_config = match Settings::new_with_cli(&cli) {
 		Ok(config) => config,
@@ -56,7 +58,10 @@ fn main() {
 					std::process::exit(1);
 				}
 			};
-			telegram::start(&app_config, target_data).unwrap();
+			telegram::start(&app_config, target_data).await.unwrap_or_else(|e| {
+				eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
+				std::process::exit(1);
+			})
 		}
 	}
 }

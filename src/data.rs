@@ -18,11 +18,16 @@ pub struct Data {
 impl Data {
 	pub fn load(path: &Path) -> Result<Self> {
 		let file = File::open(path)?;
-		let reader = BufReader::new(file);
+		let mut reader = BufReader::new(file);
 		let extension = path.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
 
 		let data: JsonValue = match extension {
-			"json" => serde_json::from_reader(reader).context("Failed to read JSON file")?,
+			"json" | "json5" => {
+				let mut content = String::new();
+				reader.read_to_string(&mut content)?;
+				let json5_value: JsonValue = json5::from_str(&content).context("Failed to read JSON file")?;
+				json5_value
+			}
 			"yaml" | "yml" => {
 				let yaml_value: YamlValue = serde_yaml::from_reader(reader).context("Failed to read YAML file")?;
 				serde_json::to_value(yaml_value).context("Failed to convert YAML to JSON")?
@@ -45,7 +50,7 @@ impl Data {
 		let extension = self.path.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
 
 		match extension {
-			"json" => serde_json::to_writer(writer, new_value).context("Failed to write JSON file")?,
+			"json" | "json5" => serde_json::to_writer(writer, new_value).context("Failed to write JSON file")?,
 			"yaml" | "yml" => {
 				let yaml_value: YamlValue = serde_json::from_value(new_value.clone()).context("Failed to convert JSON to YAML")?;
 				serde_yaml::to_writer(writer, &yaml_value).context("Failed to write YAML file")?
@@ -76,7 +81,7 @@ mod tests {
 		let dir = tempdir().unwrap();
 		let path = dir.path().join(format!("test_data.{}", format));
 		let content = match format {
-			"json" => r#"{"key": "value", "number": 42}"#.to_string(),
+			"json" => r#"{"key": "value", "number": 42,}"#.to_string(), // trailing comma, as we're using interpreting using json5
 			"yaml" | "yml" => r#"key: value\nnumber: 42"#.replace("\\n", "\n"),
 			"toml" => r#"key = "value"\nnumber = 42"#.replace("\\n", "\n"),
 			_ => panic!("Unsupported format"),
