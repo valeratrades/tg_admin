@@ -8,7 +8,6 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/valeratrades/tg_admin"
 
-
 [package.metadata.cargo-machete]
 ignored = ["derive-new", "anyhow", "serde", "tokio"]
 
