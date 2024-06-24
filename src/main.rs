@@ -1,7 +1,9 @@
 use clap::{Args, Parser, Subcommand};
 use settings::Settings;
 use v_utils::io::ExpandedPath;
+pub mod data;
 pub mod settings;
+pub mod telegram;
 
 #[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
@@ -47,7 +49,14 @@ fn main() {
 
 	match &cli.command {
 		Commands::Start(args) => {
-			unimplemented!();
+			let target_data = match data::Data::read(args.path.as_ref()) {
+				Ok(data) => data,
+				Err(e) => {
+					eprintln!("Error: Failed to load data from the target file. Details: {}", e);
+					std::process::exit(1);
+				}
+			};
+			telegram::start(&app_config, target_data).unwrap();
 		}
 	}
 }
