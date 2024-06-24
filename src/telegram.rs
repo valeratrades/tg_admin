@@ -1,10 +1,11 @@
+use crate::data::{Data, Level};
 use crate::settings::Settings;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
-use crate::data::Data;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use teloxide::prelude::*;
 use teloxide::types::Message;
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 #[tracing::instrument]
 pub async fn start(settings: &Settings, data: Data) -> Result<()> {
@@ -13,14 +14,13 @@ pub async fn start(settings: &Settings, data: Data) -> Result<()> {
 	let bot = Bot::new(token);
 	teloxide::repl(bot, move |message: Message, bot: Bot| {
 		let data = data.clone();
+		let level = Level::default();
 
 		async move {
 			if let Some(text) = message.text() {
 				if text == "/admin" {
-					let markup = render_markup(data.as_ref());
-					bot.send_message(message.chat.id, "Admin Menu")
-						.reply_markup(markup)
-					.await?;
+					let markup = render_markup(&data, &level);
+					bot.send_message(message.chat.id, "Admin Menu").reply_markup(markup).await?;
 				}
 			}
 			respond(())
@@ -31,43 +31,42 @@ pub async fn start(settings: &Settings, data: Data) -> Result<()> {
 	Ok(())
 }
 
-fn render_markup(current_level: &Value) -> InlineKeyboardMarkup {
-	let items = level_representation(current_level);
-	create_markup(items)
+fn render_markup(data: &Data, level: &Level) -> InlineKeyboardMarkup {
+	let items = level_representation(&data.at(level).unwrap());
+	create_markup(items, level)
 }
 
 //TODO!: should send callbacks with full path to the new subarea of the data
-fn create_markup(items: Vec<String>) -> InlineKeyboardMarkup {
-    let mut keyboard = vec![];
+fn create_markup(items: Vec<MarkdownItem>, level: &Level) -> InlineKeyboardMarkup {
+	let mut keyboard = vec![];
 
-    for item in items {
-        let parts: Vec<&str> = item.split(": ").collect();
-        if parts.len() == 2 {
-            let key = parts[0].to_string();
-            let button_text = key.clone();
-            let callback_data = key;
+	for item in items {
+		let callback_data = level.join(&item.key).into_string();
+		let button = InlineKeyboardButton::callback(item.full_text, callback_data);
+		keyboard.push(vec![button]);
+	}
 
-            let button = InlineKeyboardButton::callback(button_text, callback_data);
-            keyboard.push(vec![button]);
-        }
-    }
-
-    InlineKeyboardMarkup::new(keyboard)
+	InlineKeyboardMarkup::new(keyboard)
 }
 
-fn level_representation(current_level: &Value) -> Vec<String> {
+#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize)]
+struct MarkdownItem {
+	pub key: String,
+	pub full_text: String,
+}
+
+fn level_representation(current_level: &Value) -> Vec<MarkdownItem> {
 	let mut result = Vec::new();
 
 	if let Value::Object(map) = current_level {
 		for (key, val) in map {
-			let formatted_value = match val {
-				Value::Object(_) => "{}".to_string(),
-				Value::Array(_) => "[]".to_string(),
-				_ => val.to_string(),
+			let f = match val {
+				Value::Object(_) => format!("{} {}", "{}".to_string(), key),
+				Value::Array(_) => format!("{} {}", "[]".to_string(), key),
+				_ => format!("{}: {}", key, val.to_string()),
 			};
-
-			let formatted_pair = format!("{}: {}", key, formatted_value);
-			result.push(formatted_pair);
+			let markdown_item = MarkdownItem::new(key.to_string(), f);
+			result.push(markdown_item);
 		}
 	}
 
@@ -97,10 +96,22 @@ mod tests {
 			formatted_output,
 			@r###"
   [
-    "address: {}",
-    "age: 25",
-    "emails: []",
-    "name: \"Alice\""
+    {
+      "key": "address",
+      "full_text": "{} address"
+    },
+    {
+      "key": "age",
+      "full_text": "age: 25"
+    },
+    {
+      "key": "emails",
+      "full_text": "[] emails"
+    },
+    {
+      "key": "name",
+      "full_text": "name: \"Alice\""
+    }
   ]
   "###
 		);

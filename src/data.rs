@@ -64,10 +64,69 @@ impl Data {
 
 		Ok(())
 	}
+
+	pub fn at(&self, level: &Level) -> Option<JsonValue> {
+		let mut current = &self.inner;
+		for part in level.to_vec() {
+			current = current.get(&part)?;
+		}
+		Some(current.clone())
+	}
 }
 impl AsRef<JsonValue> for Data {
 	fn as_ref(&self) -> &JsonValue {
 		&self.inner
+	}
+}
+
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct Level(String);
+impl Level {
+	pub fn push(&mut self, part: &str) {
+		self.0.push_str("::");
+		self.0.push_str(part);
+	}
+
+	pub fn join(&self, part: &str) -> Self {
+		let mut new_level = self.clone();
+		new_level.push(part);
+		new_level
+	}
+
+	pub fn is_top(&self) -> bool {
+		self.0.is_empty()
+	}
+
+	fn to_vec(&self) -> Vec<String> {
+		self.0.split("::").map(String::from).collect()
+	}
+
+	pub fn to_string(&self) -> String {
+		self.0.clone()
+	}
+
+	pub fn into_string(self) -> String {
+		self.0
+	}
+}
+impl From<Vec<String>> for Level {
+	fn from(parts: Vec<String>) -> Self {
+		Self(parts.join("::"))
+	}
+}
+impl From<&str> for Level {
+	fn from(s: &str) -> Self {
+		Self(s.to_string())
+	}
+}
+impl From<String> for Level {
+	fn from(s: String) -> Self {
+		Self(s)
+	}
+}
+impl From<Level> for Vec<String> {
+	fn from(level: Level) -> Self {
+		level.0.split("::").map(String::from).collect()
 	}
 }
 
