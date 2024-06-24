@@ -66,7 +66,6 @@ impl Data {
 	}
 
 	pub fn at(&self, level: &Level) -> Option<JsonValue> {
-		dbg!(&level.to_vec());
 		let mut current = &self.inner;
 		for part in level.to_vec() {
 			current = current.get(&part)?;

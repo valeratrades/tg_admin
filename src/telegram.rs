@@ -1,19 +1,18 @@
-use std::sync::Arc;
-
 use crate::data::{Data, Level};
 use crate::settings::Settings;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use teloxide::prelude::*;
-use teloxide::types::Message;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, Message};
 
 #[tracing::instrument]
 pub async fn start(settings: Arc<Settings>, data: Data) -> Result<()> {
 	let token = &settings.tg_token;
 
-	let bot = Bot::new(token);
+	let bot = teloxide::Bot::new(token);
+
 	teloxide::repl(bot, move |message: Message, bot: Bot| {
 		let data = data.clone();
 		let level = Level::default();
@@ -66,14 +65,34 @@ struct MarkdownItem {
 }
 
 fn level_representation(current_level: &Value) -> Vec<MarkdownItem> {
-	let mut result = Vec::new();
+	fn escape_markdown(s: &str) -> String {
+		//s.replace('_', r"\_")
+		//	.replace('*', r"\*")
+		//	.replace('[', r"\[")
+		//	.replace(']', r"\]")
+		//	.replace('(', r"\(")
+		//	.replace(')', r"\)")
+		//	.replace('~', r"\~")
+		//	.replace('`', r"\`")
+		//	.replace('>', r"\>")
+		//	.replace('#', r"\#")
+		//	.replace('+', r"\+")
+		//	.replace('-', r"\-")
+		//	.replace('=', r"\=")
+		//	.replace('|', r"\|")
+		//	.replace('.', r"\.")
+		//	.replace('!', r"\!")
+		// For some reason can't render it, even with .parse_mode(ParseMode::MarkdownV2) on the bot or send_message
+		s.to_string()
+	}
 
+	let mut result = Vec::new();
 	if let Value::Object(map) = current_level {
 		for (key, val) in map {
 			let f = match val {
-				Value::Object(_) => format!("{} {}", "{}".to_string(), key),
-				Value::Array(_) => format!("{} {}", "[]".to_string(), key),
-				_ => format!("{}: {}", key, val.to_string()),
+				Value::Object(_) => format!("`{}` {}", escape_markdown("{}"), escape_markdown(key)),
+				Value::Array(_) => format!("`{}` {}", escape_markdown("[]"), escape_markdown(key)),
+				_ => format!("{}: `{}`", escape_markdown(key), escape_markdown(&val.to_string())),
 			};
 			let markdown_item = MarkdownItem::new(key.to_string(), f);
 			result.push(markdown_item);
@@ -108,19 +127,19 @@ mod tests {
   [
     {
       "key": "address",
-      "full_text": "{} address"
+      "full_text": "**\\{\\}** address"
     },
     {
       "key": "age",
-      "full_text": "age: 25"
+      "full_text": "age: **25**"
     },
     {
       "key": "emails",
-      "full_text": "[] emails"
+      "full_text": "**\\[\\]** emails"
     },
     {
       "key": "name",
-      "full_text": "name: \"Alice\""
+      "full_text": "name: **\"Alice\"**"
     }
   ]
   "###
