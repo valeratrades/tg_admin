@@ -2,6 +2,12 @@
 name = "tg_admin"
 version = "0.1.0"
 edition = "2021"
+description = "tg interface to change local structured data"
+rust-version = "1.81"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/valeratrades/tg_admin"
+
 
 [package.metadata.cargo-machete]
 ignored = ["derive-new", "anyhow", "serde", "tokio"]
