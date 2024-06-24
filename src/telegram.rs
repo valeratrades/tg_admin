@@ -1,7 +1,6 @@
 use crate::data::{Data, Level};
 use crate::settings::Settings;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use teloxide::prelude::*;

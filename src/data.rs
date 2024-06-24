@@ -118,10 +118,6 @@ impl Level {
 		}
 	}
 
-	pub fn to_string(&self) -> String {
-		self.0.clone()
-	}
-
 	pub fn into_string(self) -> String {
 		self.0
 	}
@@ -144,6 +140,11 @@ impl From<String> for Level {
 impl From<Level> for Vec<String> {
 	fn from(level: Level) -> Self {
 		level.0.split("::").map(String::from).collect()
+	}
+}
+impl std::fmt::Display for Level {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.0)
 	}
 }
 
