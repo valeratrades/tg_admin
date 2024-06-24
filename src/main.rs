@@ -49,7 +49,7 @@ fn main() {
 
 	match &cli.command {
 		Commands::Start(args) => {
-			let target_data = match data::Data::read(args.path.as_ref()) {
+			let target_data = match data::Data::load(args.path.as_ref()) {
 				Ok(data) => data,
 				Err(e) => {
 					eprintln!("Error: Failed to load data from the target file. Details: {}", e);

@@ -16,7 +16,7 @@ pub struct Data {
 }
 
 impl Data {
-	pub fn read(path: &Path) -> Result<Self> {
+	pub fn load(path: &Path) -> Result<Self> {
 		let file = File::open(path)?;
 		let reader = BufReader::new(file);
 		let extension = path.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
@@ -59,8 +59,9 @@ impl Data {
 
 		Ok(())
 	}
-
-	pub fn as_ref(&self) -> &JsonValue {
+}
+impl AsRef<JsonValue> for Data {
+	fn as_ref(&self) -> &JsonValue {
 		&self.inner
 	}
 }
@@ -94,7 +95,7 @@ mod tests {
 
 			write(&path, content)?;
 
-			let data = Data::read(&path)?;
+			let data = Data::load(&path)?;
 			assert_eq!(data.as_ref()["key"], "value");
 			assert_eq!(data.as_ref()["number"], 42);
 
@@ -104,7 +105,7 @@ mod tests {
 			}
 			data.write(&new_inner)?;
 
-			let data = Data::read(&path)?;
+			let data = Data::load(&path)?;
 			assert_eq!(data.as_ref()["key"], "new_value", "(Format: {})", format);
 			assert_eq!(data.as_ref()["number"], 42, "(Format: {})", format);
 		}
