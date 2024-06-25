@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::io::{Read, Write};
@@ -16,6 +17,7 @@ pub struct Data {
 }
 
 impl Data {
+	/// Load data from a file
 	pub fn load(path: &Path) -> Result<Self> {
 		let file = File::open(path)?;
 		let mut reader = BufReader::new(file);
@@ -44,6 +46,7 @@ impl Data {
 		Ok(Self::new(data, path.to_path_buf()))
 	}
 
+	/// Write data to the source file
 	pub fn write(&self, new_value: &JsonValue) -> Result<()> {
 		let file = File::create(&self.path)?;
 		let mut writer = BufWriter::new(file);
@@ -65,7 +68,13 @@ impl Data {
 		Ok(())
 	}
 
-	pub fn at(&self, level: &Level) -> Option<JsonValue> {
+	/// Load the file without needing to provide the path again
+	pub fn reload(&mut self) -> Result<()> {
+		self.inner = Self::load(&self.path)?.inner;
+		Ok(())
+	}
+
+	pub fn at(&self, level: &ValuePath) -> Option<JsonValue> {
 		let mut current = &self.inner;
 		for part in level.to_vec() {
 			current = current.get(&part)?;
@@ -83,9 +92,9 @@ impl AsRef<JsonValue> for Data {
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new)]
-pub struct Level(String);
-impl Level {
+#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValuePath(String);
+impl ValuePath {
 	pub fn push(&mut self, part: &str) {
 		if !self.0.is_empty() {
 			self.0.push_str("::");
@@ -122,27 +131,27 @@ impl Level {
 		self.0
 	}
 }
-impl From<Vec<String>> for Level {
+impl From<Vec<String>> for ValuePath {
 	fn from(parts: Vec<String>) -> Self {
 		Self(parts.join("::"))
 	}
 }
-impl From<&str> for Level {
+impl From<&str> for ValuePath {
 	fn from(s: &str) -> Self {
 		Self(s.to_string())
 	}
 }
-impl From<String> for Level {
+impl From<String> for ValuePath {
 	fn from(s: String) -> Self {
 		Self(s)
 	}
 }
-impl From<Level> for Vec<String> {
-	fn from(level: Level) -> Self {
+impl From<ValuePath> for Vec<String> {
+	fn from(level: ValuePath) -> Self {
 		level.0.split("::").map(String::from).collect()
 	}
 }
-impl std::fmt::Display for Level {
+impl std::fmt::Display for ValuePath {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", self.0)
 	}

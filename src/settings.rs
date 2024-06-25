@@ -5,7 +5,7 @@ use v_utils::macros::MyConfigPrimitives;
 #[derive(Clone, Debug, Default, MyConfigPrimitives)]
 pub struct Settings {
 	pub tg_token: String,
-	pub admin_list: Option<Vec<i64>>,
+	pub admin_list: Option<Vec<u64>>,
 }
 
 impl Settings {

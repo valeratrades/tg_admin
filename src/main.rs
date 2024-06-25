@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use clap::{Args, Parser, Subcommand};
 use settings::Settings;
@@ -39,7 +39,7 @@ pub struct ManageArgs {
 	tg_token: Option<String>,
 	/// Users with admin rights
 	#[arg(short, long)]
-	admin_list: Option<Vec<i64>>,
+	admin_list: Option<Vec<u64>>,
 }
 
 #[tokio::main]
@@ -63,10 +63,12 @@ async fn main() {
 					std::process::exit(1);
 				}
 			};
-			telegram::start(Arc::new(app_config), target_data).await.unwrap_or_else(|e| {
-				eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
-				std::process::exit(1);
-			})
+			telegram::run(Arc::new(app_config), Arc::new(RwLock::new(target_data)))
+				.await
+				.unwrap_or_else(|e| {
+					eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
+					std::process::exit(1);
+				})
 		}
 	}
 }

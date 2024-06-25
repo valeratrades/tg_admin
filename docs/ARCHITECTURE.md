@@ -11,3 +11,5 @@ Meta target data-file representation, allowing for seamless integration with dif
 
 ## `telegram.rs`
 Always shows the markdown menu with the items at the currently selected level. At a click on each item we either change the position, either get a menu for changing its value.
+
+Current implementation is heavily referencing [transfer_bot](<https://github.com/franciscofigueira/transferBot>).
