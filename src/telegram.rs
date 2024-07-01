@@ -103,13 +103,8 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 }
 
 async fn admin_handler(bot: Bot, dialogue: MyDialogue, msg: Message, data: Arc<RwLock<Data>>) -> HandlerResult {
-	let value_path = ValuePath::default();
-	let markup = {
-		let data = data.read().unwrap();
-		render_markup(&data, &value_path)
-	};
-	bot.send_message(msg.chat.id, "Admin Menu").reply_markup(markup).await?;
-	Ok(())
+    let value_path = ValuePath::default();
+    continue_navigation(bot, dialogue, data, value_path).await
 }
 
 async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value_input: ValueInput, data: Arc<RwLock<Data>>) -> HandlerResult {
@@ -126,8 +121,36 @@ async fn help_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerRe
 	Ok(())
 }
 
-async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, query: CallbackQuery) -> HandlerResult {
-	unimplemented!()
+async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery, data: Arc<RwLock<Data>>) -> HandlerResult {
+    if let Some(s) = q.data {
+        let value_path = ValuePath::from(s);
+        let data_at_path = {
+            let data = data.read().unwrap();
+            data.at(&value_path).clone()
+        };
+        match data_at_path {
+            Some(Value::Object(_)) => {
+                continue_navigation(bot, dialogue, data, value_path).await?
+            }
+            _ => {
+                // Handle other value types here
+                unimplemented!()
+            }
+        }
+    } else {
+        bot.answer_callback_query(q.id).await?;
+    }
+    Ok(())
+}
+
+async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Data>>, value_path: ValuePath) -> HandlerResult {
+    dialogue.update(ChatState::Navigation).await?;
+    let markup = {
+        let data = data.read().unwrap();
+        render_markup(&data, &value_path)
+    };
+    bot.send_message(dialogue.chat_id(), "Navigation Menu").reply_markup(markup).await?;
+    Ok(())
 }
 
 fn render_markup(data: &Data, value_path: &ValuePath) -> InlineKeyboardMarkup {
