@@ -19,8 +19,8 @@ pub struct Cli {
 pub enum Commands {
 	/// Start the server allowing to change the config at the specified path using telegram.
 	///Ex
-	///```sh
-	///tg_config start -t "${THE_BOT_TOKEN}" ./config/config.json
+	///```
+	///tg_admin watch -t "${THE_BOT_TOKEN}" ./config/config.json
 	///```
 	Manage(ManageArgs),
 }
