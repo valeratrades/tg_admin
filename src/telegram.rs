@@ -58,6 +58,7 @@ pub async fn run(settings: Arc<Settings>, data: Arc<RwLock<Data>>) -> Result<()>
 		.await;
 	Ok(())
 }
+
 fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
 	use dptree::case;
 
@@ -72,11 +73,30 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 
 	let callback_query_handler = Update::filter_callback_query().endpoint(callback_query_handler);
 
+	let auth_handler = dptree::filter_map_async(|dialogue: MyDialogue| async move {
+		match dialogue.get().await {
+			Ok(Some(ChatState::Unauthorized)) => Some(()),
+			Ok(Some(_)) | Ok(None) => None,
+			Err(_) => None, // You might want to log this error
+		}
+	})
+		.endpoint(|bot: Bot, dialogue: MyDialogue, update: Update, settings: Arc<Settings>| async move {
+			if let Some(admin_list) = &settings.admin_list {
+				let user_id = update.user().unwrap().id.0;
+
+				if !admin_list.contains(&user_id) {
+					bot.send_message(update.chat_id().unwrap(), "Access denied.").await?;
+					return Ok(());  // Keep Unauthorized state
+				}
+			}
+
+			// Authorization successful, update state
+			dialogue.update(ChatState::Navigation).await?;
+			Ok(())
+		});
+
 	dialogue::enter::<Update, InMemStorage<ChatState>, ChatState, _>()
-		.branch(
-			case![ChatState::Unauthorized]
-				.endpoint(|bot, dialogue, update, settings, deps| async move { authorize_handler(bot, dialogue, update, settings, deps).await }),
-		)
+		.branch(auth_handler)
 		.branch(message_handler)
 		.branch(callback_query_handler)
 }
@@ -108,25 +128,6 @@ async fn help_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerRe
 
 async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, query: CallbackQuery) -> HandlerResult {
 	unimplemented!()
-}
-
-async fn authorize_handler(bot: Bot, dialogue: MyDialogue, update: Update, settings: Arc<Settings>, deps: DependencyMap) -> HandlerResult {
-	if let Some(admin_list) = &settings.admin_list {
-		let user_id = update.user().unwrap().id.0;
-
-		if !admin_list.contains(&user_id) {
-			bot.send_message(update.chat_id().unwrap(), "Access denied.").await?;
-			return Ok(());
-		}
-	}
-
-	dialogue.update(ChatState::Navigation).await?;
-	// Re-process the message as if nothing happened
-	tokio::spawn(async move {
-		schema().dispatch(deps).await;
-	});
-
-	Ok(())
 }
 
 fn render_markup(data: &Data, value_path: &ValuePath) -> InlineKeyboardMarkup {
