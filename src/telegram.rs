@@ -29,6 +29,7 @@ struct ValueInput {
 	value_path: ValuePath,
 	new_value: Value,
 }
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum InputType {
 	UpdateValue,
@@ -105,8 +106,7 @@ async fn admin_handler(bot: Bot, dialogue: MyDialogue, msg: Message, data: Arc<R
 	let value_path = ValuePath::default();
 	let markup = {
 		let data = data.read().unwrap();
-		let m = render_markup(&data, &value_path);
-		m
+		render_markup(&data, &value_path)
 	};
 	bot.send_message(msg.chat.id, "Admin Menu").reply_markup(markup).await?;
 	Ok(())
