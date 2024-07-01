@@ -1,5 +1,9 @@
+#![allow(clippy::len_zero)] // wait, so are the ones in Cargo.toml not enough?
+#![allow(clippy::get_first)]
+#![allow(clippy::comparison_to_empty)]
+#![feature(trait_alias)]
+#![feature(type_changing_struct_update)]
 use std::sync::{Arc, RwLock};
-
 use clap::{Args, Parser, Subcommand};
 use settings::Settings;
 use v_utils::io::ExpandedPath;

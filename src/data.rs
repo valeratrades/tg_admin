@@ -92,19 +92,24 @@ impl AsRef<JsonValue> for Data {
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+/// Callback data must never be empty, so 0 level is "::" and not ""
+#[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValuePath(String);
 impl ValuePath {
 	pub fn push(&mut self, part: &str) {
-		if !self.0.is_empty() {
+		if !self.is_top() {
 			self.0.push_str("::");
 		}
 		self.0.push_str(part);
 	}
 
-	pub fn pop(&mut self) {
-		if let Some(pos) = self.0.rfind("::") {
-			self.0.truncate(pos);
+	pub fn parent(&self) -> Self {
+		let mut new_v = self.0.clone();
+		let pos = new_v.rfind("::").unwrap_or(0);
+		new_v.truncate(pos);
+		match new_v.is_empty() {
+			true => Self::default(),
+			false => Self(new_v),
 		}
 	}
 
@@ -115,25 +120,27 @@ impl ValuePath {
 	}
 
 	pub fn is_top(&self) -> bool {
-		self.0.is_empty()
+		assert!(!self.0.is_empty());
+		self.0 == "::"
 	}
 
 	fn to_vec(&self) -> Vec<String> {
-		let v = self.0.split("::").map(String::from).collect();
-		if v == vec![""] {
-			vec![]
-		} else {
-			v
-		}
+		self.0.split("::").map(String::from).filter(|v| v != "").collect()
 	}
 
 	pub fn into_string(self) -> String {
 		self.0
 	}
 }
+impl Default for ValuePath {
+	fn default() -> Self {
+		Self("::".to_string())
+	}
+}
 impl From<Vec<String>> for ValuePath {
 	fn from(parts: Vec<String>) -> Self {
-		Self(parts.join("::"))
+		let s = "::".to_owned() + &parts.join("::");
+		Self(s)
 	}
 }
 impl From<&str> for ValuePath {
@@ -148,7 +155,7 @@ impl From<String> for ValuePath {
 }
 impl From<ValuePath> for Vec<String> {
 	fn from(level: ValuePath) -> Self {
-		level.0.split("::").map(String::from).collect()
+		level.to_vec()
 	}
 }
 impl std::fmt::Display for ValuePath {
@@ -201,5 +208,21 @@ mod tests {
 			assert_eq!(data.as_ref()["number"], 42, "(Format: {})", format);
 		}
 		Ok(())
+	}
+
+	#[test]
+	fn test_value_path() {
+		let mut level = ValuePath::default();
+		let path = ["key1", "key2", "key3"];
+
+		assert!(level.0 != "");
+		assert!(!level.to_vec().contains(&"".to_string()));
+
+		for part in &path {
+			level.push(part);
+			assert!(level.parent().0 != "");
+			assert!(!level.to_vec().contains(&"".to_string()));
+		}
+		assert!(level.to_vec() == path.to_vec());
 	}
 }
