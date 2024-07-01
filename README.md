@@ -4,7 +4,7 @@
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs&style=flat-square" height="20">](https://docs.rs/tg_admin)
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/valeratrades/tg_admin/ci.yml?branch=master&style=for-the-badge&style=flat-square" height="20">](https://github.com/valeratrades/tg_admin/actions?query=branch%3Amaster) <!--NB: Won't find it if repo is private-->
 <!--[![Lines Of Code](https://tokei.rs/b1/github/valeratrades/tg_admin?category=code)](https://github.com/valeratrades/tg_admin/tree/master/src)-->
-![Lines Of Code](https://img.shields.io/badge/lines_of_code-0-lightblue)
+![Lines Of Code](https://img.shields.io/badge/LoC-0-lightblue)
 
 Util to control configuration settings via a telegram bot.
 
