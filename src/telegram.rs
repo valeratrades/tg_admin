@@ -29,7 +29,6 @@ enum ChatState {
 struct ValueInput {
 	input_type: InputValueType,
 	value_path: ValuePath,
-	new_value: Value,
 }
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,20 +130,21 @@ async fn help_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerRe
 
 async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery, data: Arc<RwLock<Data>>) -> HandlerResult {
 	bot.answer_callback_query(q.id.clone()).await?; // normally this is done after, but I like how it stops for a moment before the action is performed. Otherwise looks cut.
-	if let Some(s) = q.data {
-		let value_path = ValuePath::from(s);
-		let data_at_path = {
-			let data = data.read().unwrap();
-			data.at(&value_path).clone()
-		};
-		match data_at_path {
-			Some(Value::Object(_)) | Some(Value::Array(_)) => {
+	if let Some(j) = q.data {
+		let action: CallbackAction = serde_json::from_str(&j).unwrap();
+		match action {
+			CallbackAction::Go(value_path) => {
 				continue_navigation(bot.clone(), dialogue, data, value_path).await?;
-			}
-			_ => {
-				//- immediately jump to update value
+			},
+			CallbackAction::UpdateAt(value_path) => {
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path))).await?; //dbg
+			},
+			CallbackAction::AddTo(value_path) => {
 				unimplemented!()
-			}
+			},
+			CallbackAction::RemoveFrom(value_path) => {
+				unimplemented!()
+			},
 		}
 	}
 	Ok(())
@@ -157,7 +157,6 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 	};
 
 	let state = dialogue.get().await.unwrap().unwrap();
-	dbg!(&state);
 	let message_id = match state {
 		ChatState::Navigation { message_id } => message_id,
 		_ => unreachable!(),
