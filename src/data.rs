@@ -113,6 +113,11 @@ impl ValuePath {
 		}
 	}
 
+	pub fn basename(&self) -> String {
+		let pos = self.0.rfind("::").unwrap_or(0);
+		self.0[(pos + 2)..].to_string()
+	}
+
 	pub fn join(&self, part: &str) -> Self {
 		let mut new_level = self.clone();
 		new_level.push(part);
@@ -216,12 +221,14 @@ mod tests {
 		let path = ["key1", "key2", "key3"];
 
 		assert!(level.0 != "");
+		assert!(level.basename() == "");
 		assert!(!level.to_vec().contains(&"".to_string()));
 
 		for part in &path {
 			level.push(part);
 			assert!(level.parent().0 != "");
 			assert!(!level.to_vec().contains(&"".to_string()));
+			assert!(level.basename() == *part);
 		}
 		assert!(level.to_vec() == path.to_vec());
 	}

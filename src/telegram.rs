@@ -27,16 +27,16 @@ enum ChatState {
 }
 #[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
 struct ValueInput {
-	input_type: InputType,
+	input_type: InputValueType,
 	value_path: ValuePath,
 	new_value: Value,
 }
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum InputType {
-	UpdateValue,
-	AddToValue,
-	RemoveFromValue,
+enum InputValueType {
+	UpdateAt,
+	AddTo,
+	RemoveFrom,
 }
 #[derive(BotCommands, Clone, Debug)]
 #[command(description = "Commands:", rename_rule = "lowercase")]
@@ -101,12 +101,12 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 
 async fn admin_handler(bot: Bot, msg: Message, dialogue: MyDialogue, data: Arc<RwLock<Data>>) -> HandlerResult {
 	let value_path = ValuePath::default();
-	let markup = {
+	let (header, markup) = {
 		let data = data.read().unwrap();
-		render_markup(&data, &value_path)
+		render_header_and_markup(&data, &value_path)
 	
 	};
-	let sent_message = bot.send_message(msg.chat.id, "Admin Menu")
+	let sent_message = bot.send_message(msg.chat.id, &header)
 		.reply_markup(markup)
 	.await?;
 	dialogue.update(ChatState::Navigation { message_id: sent_message.id.0 }).await?;
@@ -138,11 +138,11 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 			data.at(&value_path).clone()
 		};
 		match data_at_path {
-			Some(Value::Object(_)) => {
+			Some(Value::Object(_)) | Some(Value::Array(_)) => {
 				continue_navigation(bot.clone(), dialogue, data, value_path).await?;
 			}
 			_ => {
-				// Handle other value types here
+				//- immediately jump to update value
 				unimplemented!()
 			}
 		}
@@ -151,11 +151,10 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 }
 
 async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Data>>, value_path: ValuePath) -> HandlerResult {
-	let markup = {
+	let (header, markup) = {
 		let data = data.read().unwrap();
-		render_markup(&data, &value_path)
+		render_header_and_markup(&data, &value_path)
 	};
-	dbg!(&markup);
 
 	let state = dialogue.get().await.unwrap().unwrap();
 	dbg!(&state);
@@ -164,7 +163,7 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 		_ => unreachable!(),
 	};
 
-	match bot.edit_message_text(dialogue.chat_id(), MessageId(message_id), "Admin Menu")
+	match bot.edit_message_text(dialogue.chat_id(), MessageId(message_id), &header)
 		.reply_markup(markup.clone())
 	.await
 	{
@@ -172,7 +171,7 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 		//TODO!: assert that the err is about message being too old, as it's the only recoverable one.
 		Err(err) => {
 			dbg!(err);
-			let sent_message = bot.send_message(dialogue.chat_id(), "Admin Menu")
+			let sent_message = bot.send_message(dialogue.chat_id(), &header)
 				.reply_markup(markup)
 			.await?;
 			dialogue.update(ChatState::Navigation { message_id: sent_message.id.0 }).await?;
@@ -181,28 +180,74 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 	}
 }
 
-fn render_markup(data: &Data, value_path: &ValuePath) -> InlineKeyboardMarkup {
-	let mut keyboard = Vec::new();
-	let current_value_path = &data.at(value_path).unwrap();
-	if let Value::Object(map) = current_value_path {
-		if !value_path.is_top() {
-			let callback_data = value_path.parent().to_string();
-			let button = InlineKeyboardButton::callback("..", callback_data);
-			keyboard.push(vec![button]);
-		}
-		for (key, val) in map {
-			let f = match val {
-				Value::Object(_) => format!("`{}` {}", "{}", key),
-				Value::Array(_) => format!("`{}` {}", "[]", key),
-				_ => format!("{}: `{}`", key, &val.to_string()),
-			};
+#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+struct More {
+	pub value_path: ValuePath,
+	pub start_at: usize,
+}
+#[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+enum CallbackAction {
+	Go(ValuePath),
+	UpdateAt(ValuePath),
+	AddTo(ValuePath),
+	RemoveFrom(ValuePath),
+}
 
-			let callback_data = value_path.join(key).into_string();
-			let button = InlineKeyboardButton::callback(f, callback_data);
-			keyboard.push(vec![button]);
+fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, InlineKeyboardMarkup) {
+	let mut keyboard = Vec::new();
+	let current_value_at_path = &data.at(value_path).unwrap();
+	let mut header = "Admin Menu".to_owned();
+
+	// Add parent navigation button if not at top level
+	if !value_path.is_top() {
+		let callback_data = value_path.parent().to_string();
+		let button = InlineKeyboardButton::callback("..", callback_data);
+		keyboard.push(vec![button]);
+	}
+
+	match current_value_at_path {
+		Value::Object(map) => {
+			for (key, val) in map {
+				let (display_text, callback_data) = match val {
+					Value::Object(_) => {
+						(format!("{} {}", "{}", key), CallbackAction::Go(value_path.join(key)))
+					},
+					Value::Array(arr) => {
+						(format!("[{}] {}", arr.len(), key), CallbackAction::Go(value_path.join(key)))
+					},
+					_ => {
+						(format!("{}: {}", key, &val.to_string()), CallbackAction::UpdateAt(value_path.join(key)))
+					},
+				};
+
+				let button = InlineKeyboardButton::callback(display_text, serde_json::to_string(&callback_data).unwrap());
+				keyboard.push(vec![button]);
+			}
+		},
+		Value::Array(arr) => {
+			header = format!("[{}] {}", arr.len(), value_path.basename());
+
+			let start = arr.len().saturating_sub(25);
+			let mut array_str = "\n```json\n".to_owned();
+			for a in arr.iter().skip(start) {
+				array_str.push_str(&format!("{a}\n"));
+			}
+			array_str.push_str("```");
+			header += &array_str;
+
+			let bottom_row = vec![
+				InlineKeyboardButton::callback("Add", value_path.join("add").into_string()),
+				InlineKeyboardButton::callback("Remove", value_path.join("remove").into_string()),
+			];
+			//TODO!: make doubled horizontally `<-` and `->` buttons that modify starting position of the count
+			keyboard.push(bottom_row);
+		},
+		_ => {
+			unreachable!();
 		}
 	}
-	InlineKeyboardMarkup::new(keyboard)
+
+	(header, InlineKeyboardMarkup::new(keyboard))
 }
 
 #[cfg(test)]
@@ -226,7 +271,7 @@ mod tests {
 	#[test]
 	fn test_top_value_path_representation() {
 		let (data, value_path) = gen_data();
-		let r = render_markup(&data, &value_path);
+		let (_h, r) = render_header_and_markup(&data, &value_path);
 
 		insta::assert_json_snapshot!(
 			r,
@@ -235,26 +280,26 @@ mod tests {
     "inline_keyboard": [
       [
         {
-          "text": "`{}` address",
-          "callback_data": "::address"
+          "text": "{} address",
+          "callback_data": "{\"Go\":\"::address\"}"
         }
       ],
       [
         {
-          "text": "age: `25`",
-          "callback_data": "::age"
+          "text": "age: 25",
+          "callback_data": "{\"UpdateAt\":\"::age\"}"
         }
       ],
       [
         {
-          "text": "`[]` emails",
-          "callback_data": "::emails"
+          "text": "[2] emails",
+          "callback_data": "{\"Go\":\"::emails\"}"
         }
       ],
       [
         {
-          "text": "name: `\"Alice\"`",
-          "callback_data": "::name"
+          "text": "name: \"Alice\"",
+          "callback_data": "{\"UpdateAt\":\"::name\"}"
         }
       ]
     ]
@@ -267,7 +312,7 @@ mod tests {
 	fn test_nested_value_path_representation() {
 		let (data, mut value_path) = gen_data();
 		value_path.push("address");
-		let r = render_markup(&data, &value_path);
+		let (_h, r) = render_header_and_markup(&data, &value_path);
 		insta::assert_json_snapshot!(
 			r,
 			@r###"
@@ -281,14 +326,67 @@ mod tests {
       ],
       [
         {
-          "text": "city: `\"Elsewhere\"`",
-          "callback_data": "::address::city"
+          "text": "city: \"Elsewhere\"",
+          "callback_data": "{\"UpdateAt\":\"::address::city\"}"
         }
       ],
       [
         {
-          "text": "street: `\"456 Another St\"`",
-          "callback_data": "::address::street"
+          "text": "street: \"456 Another St\"",
+          "callback_data": "{\"UpdateAt\":\"::address::street\"}"
+        }
+      ]
+    ]
+  }
+  "###
+		);
+	}
+	#[test]
+	fn test_array_value_path_representation() {
+		let (data, mut value_path) = gen_data();
+		value_path.push("emails");
+		let (h, r) = render_header_and_markup(&data, &value_path);
+
+		insta::assert_snapshot!(
+			h,
+			"Admin Menu",
+		);
+
+		insta::assert_json_snapshot!(
+			r,
+			@r###"
+  {
+    "inline_keyboard": [
+      [
+        {
+          "text": "..",
+          "callback_data": "::"
+        }
+      ],
+      [
+        {
+          "text": "[0] \"alice@example.com\"",
+          "callback_data": "::emails::0"
+        }
+      ],
+      [
+        {
+          "text": "[1] \"a@example.com\"",
+          "callback_data": "::emails::1"
+        }
+      ],
+      [
+        {
+          "text": "..",
+          "callback_data": "::"
+        },
+        {
+          "text": "Add",
+          "callback_data": "::emails::add"
+        },
+        {
+          "text": "Remove",
+          "callback_data": "::emails::remove"
         }
       ]
     ]
