@@ -82,6 +82,15 @@ impl Data {
 		Some(current.clone())
 	}
 
+	pub fn set_at(&mut self, level: &ValuePath, value: JsonValue) {
+		let mut current = &mut self.inner;
+		for part in level.to_vec().iter().take(level.to_vec().len() - 1) {
+			current = current.get_mut(part).unwrap();
+		}
+		current[level.to_vec().last().unwrap()] = value;
+		self.write(&self.inner).unwrap();
+	}
+
 	pub fn mock(value: JsonValue) -> Self {
 		Self::new(value, PathBuf::new())
 	}

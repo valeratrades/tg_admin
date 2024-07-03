@@ -11,9 +11,13 @@ use teloxide::prelude::*;
 use teloxide::types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId};
 use teloxide::utils::command::{self, BotCommands};
 use tracing::info;
+use crate::utils::get_json_type;
 
 type MyDialogue = Dialogue<ChatState, InMemStorage<ChatState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>; //dbg
+#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+struct NavigationMessageId(i32);
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 enum ChatState {
@@ -115,7 +119,59 @@ async fn admin_handler(bot: Bot, msg: Message, dialogue: MyDialogue, data: Arc<R
 async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value_input: ValueInput, data: Arc<RwLock<Data>>) -> HandlerResult {
 	// Should resend the message from which we went to the input state after we update the value and report the change.
 	// Since it's new message, update the Navigation { message_id } accordingly.
-	unimplemented!()
+
+	match msg.text().map(ToOwned::to_owned) {
+		Some(new_value) => {
+			let old_value = {
+				let data_lock = data.read().unwrap();
+				data_lock.at(&value_input.value_path).unwrap()
+			};
+			if let Ok(new_value) = serde_json::from_str(&new_value) {
+				if get_json_type(&new_value) == get_json_type(&old_value) {
+					{
+						data.write().unwrap().set_at(&value_input.value_path, new_value.clone());
+					}
+					bot.send_message(
+						msg.chat.id,
+						format!(
+							"Value of `{}` has been updated: `{}` -> `{}`",
+							&value_input.value_path.basename(),
+							&old_value.to_string(),
+							&new_value.to_string(),
+						),
+					).await?;
+
+					// Resend the nav menu
+					let (header, markup) = {
+						let data = data.read().unwrap();
+						render_header_and_markup(&data, &value_input.value_path)
+					};
+					let sent_message = bot.send_message(dialogue.chat_id(), &header)
+						.reply_markup(markup)
+					.await?;
+					dialogue.update(ChatState::Navigation{message_id: sent_message.id.0}).await?;
+
+				} else {
+					bot.send_message(
+						msg.chat.id,
+						"Invalid value type. Input correct value for the chosen setting.",
+					)
+					.await?;
+				}
+			} else {
+				bot.send_message(
+					msg.chat.id,
+					"Invalid value. Input valid JSON value.",
+				)
+				.await?;
+			}
+		}
+		None => {
+			bot.send_message(msg.chat.id, "Please send the new value.")
+			.await?;
+		}
+	}
+	Ok(())
 }
 
 async fn invalid_state_handler(bot: Bot, msg: Message) -> HandlerResult {
@@ -131,16 +187,25 @@ async fn help_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerRe
 async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery, data: Arc<RwLock<Data>>) -> HandlerResult {
 	bot.answer_callback_query(q.id.clone()).await?; // normally this is done after, but I like how it stops for a moment before the action is performed. Otherwise looks cut.
 	if let Some(j) = q.data {
-		dbg!(&j);
 		let action: CallbackAction = serde_json::from_str(&j).unwrap();
 		match action {
 			CallbackAction::Go(value_path) => {
 				continue_navigation(bot.clone(), dialogue, data, value_path).await?;
 			},
 			CallbackAction::UpdateAt(value_path) => {
-				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path))).await?; //dbg
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone()))).await?; //dbg
 				//- initiate the input state (send the message and return probably)
-				todo!()
+				bot.send_message(
+					dialogue.chat_id(),
+					format!(
+						"You're updating `{}: {}`.\n Insert the new value.",
+						&value_path.basename(),
+						{
+							let data_lock = data.read().unwrap();
+							get_json_type(&data_lock.at(&value_path).unwrap())
+						}
+					),
+				).await?;
 			},
 			CallbackAction::AddTo(value_path) => {
 				unimplemented!()

@@ -10,6 +10,7 @@ use v_utils::io::ExpandedPath;
 pub mod data;
 pub mod settings;
 pub mod telegram;
+pub mod utils;
 
 #[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
