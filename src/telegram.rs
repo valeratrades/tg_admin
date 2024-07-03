@@ -4,7 +4,7 @@ use anyhow::Result;
 //use dptree::HandlerResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use teloxide::dispatching::dialogue::{self, GetChatId, InMemStorage};
 use teloxide::dispatching::UpdateHandler;
 use teloxide::prelude::*;
@@ -131,6 +131,7 @@ async fn help_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerRe
 async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery, data: Arc<RwLock<Data>>) -> HandlerResult {
 	bot.answer_callback_query(q.id.clone()).await?; // normally this is done after, but I like how it stops for a moment before the action is performed. Otherwise looks cut.
 	if let Some(j) = q.data {
+		dbg!(&j);
 		let action: CallbackAction = serde_json::from_str(&j).unwrap();
 		match action {
 			CallbackAction::Go(value_path) => {
@@ -201,8 +202,8 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 
 	// Add parent navigation button if not at top level
 	if !value_path.is_top() {
-		let callback_data = value_path.parent().to_string();
-		let button = InlineKeyboardButton::callback("..", callback_data);
+		let callback_action = CallbackAction::Go(value_path.parent());
+		let button = InlineKeyboardButton::callback("..", serde_json::to_string(&callback_action).unwrap());
 		keyboard.push(vec![button]);
 	}
 
@@ -237,8 +238,8 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 			header += &array_str;
 
 			let bottom_row = vec![
-				InlineKeyboardButton::callback("Add", value_path.join("add").into_string()),
-				InlineKeyboardButton::callback("Remove", value_path.join("remove").into_string()),
+				InlineKeyboardButton::callback("Add", serde_json::to_string(&CallbackAction::AddTo(value_path.join("add"))).unwrap()),
+				InlineKeyboardButton::callback("Remove", serde_json::to_string(&CallbackAction::RemoveFrom(value_path.join("remove"))).unwrap()),
 			];
 			//TODO!: make doubled horizontally `<-` and `->` buttons that modify starting position of the count
 			keyboard.push(bottom_row);
