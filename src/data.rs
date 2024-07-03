@@ -101,20 +101,20 @@ impl AsRef<JsonValue> for Data {
 	}
 }
 
-/// Callback data must never be empty, so 0 level is "::" and not ""
+/// Callback data must never be empty, so 0 level is "/" and not ""
 #[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValuePath(String);
 impl ValuePath {
 	pub fn push(&mut self, part: &str) {
 		if !self.is_top() {
-			self.0.push_str("::");
+			self.0.push('/');
 		}
 		self.0.push_str(part);
 	}
 
 	pub fn parent(&self) -> Self {
 		let mut new_v = self.0.clone();
-		let pos = new_v.rfind("::").unwrap_or(0);
+		let pos = new_v.rfind("/").unwrap_or(0);
 		new_v.truncate(pos);
 		match new_v.is_empty() {
 			true => Self::default(),
@@ -123,8 +123,9 @@ impl ValuePath {
 	}
 
 	pub fn basename(&self) -> String {
-		let pos = self.0.rfind("::").unwrap_or(0);
-		self.0[(pos + 2)..].to_string()
+		let pos = self.0.rfind("/").unwrap_or(0);
+		let offset = Self::default().0.len();
+		self.0[(pos + offset)..].to_string()
 	}
 
 	pub fn join(&self, part: &str) -> Self {
@@ -135,11 +136,11 @@ impl ValuePath {
 
 	pub fn is_top(&self) -> bool {
 		assert!(!self.0.is_empty());
-		self.0 == "::"
+		self.0 == "/"
 	}
 
 	fn to_vec(&self) -> Vec<String> {
-		self.0.split("::").map(String::from).filter(|v| v != "").collect()
+		self.0.split("/").map(String::from).filter(|v| v != "").collect()
 	}
 
 	pub fn into_string(self) -> String {
@@ -148,12 +149,12 @@ impl ValuePath {
 }
 impl Default for ValuePath {
 	fn default() -> Self {
-		Self("::".to_string())
+		Self("/".to_string())
 	}
 }
 impl From<Vec<String>> for ValuePath {
 	fn from(parts: Vec<String>) -> Self {
-		let s = "::".to_owned() + &parts.join("::");
+		let s = "/".to_owned() + &parts.join("/");
 		Self(s)
 	}
 }

@@ -135,7 +135,7 @@ async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value
 						msg.chat.id,
 						format!(
 							"Value of `{}` has been updated: `{}` -> `{}`",
-							&value_input.value_path.basename(),
+							&value_input.value_path,
 							&old_value.to_string(),
 							&new_value.to_string(),
 						),
@@ -144,7 +144,7 @@ async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value
 					// Resend the nav menu
 					let (header, markup) = {
 						let data = data.read().unwrap();
-						render_header_and_markup(&data, &value_input.value_path)
+						render_header_and_markup(&data, &value_input.value_path.parent())
 					};
 					let sent_message = bot.send_message(dialogue.chat_id(), &header)
 						.reply_markup(markup)
@@ -263,7 +263,7 @@ enum CallbackAction {
 fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, InlineKeyboardMarkup) {
 	let mut keyboard = Vec::new();
 	let current_value_at_path = &data.at(value_path).unwrap();
-	let mut header = "Admin Menu".to_owned();
+	let mut header = value_path.to_string();
 
 	// Add parent navigation button if not at top level
 	if !value_path.is_top() {
@@ -348,25 +348,25 @@ mod tests {
       [
         {
           "text": "{} address",
-          "callback_data": "{\"Go\":\"::address\"}"
+          "callback_data": "{\"Go\":\"/address\"}"
         }
       ],
       [
         {
           "text": "age: 25",
-          "callback_data": "{\"UpdateAt\":\"::age\"}"
+          "callback_data": "{\"UpdateAt\":\"/age\"}"
         }
       ],
       [
         {
           "text": "[2] emails",
-          "callback_data": "{\"Go\":\"::emails\"}"
+          "callback_data": "{\"Go\":\"/emails\"}"
         }
       ],
       [
         {
           "text": "name: \"Alice\"",
-          "callback_data": "{\"UpdateAt\":\"::name\"}"
+          "callback_data": "{\"UpdateAt\":\"/name\"}"
         }
       ]
     ]
@@ -388,19 +388,19 @@ mod tests {
       [
         {
           "text": "..",
-          "callback_data": "::"
+          "callback_data": "{\"Go\":\"/\"}"
         }
       ],
       [
         {
           "text": "city: \"Elsewhere\"",
-          "callback_data": "{\"UpdateAt\":\"::address::city\"}"
+          "callback_data": "{\"UpdateAt\":\"/address/city\"}"
         }
       ],
       [
         {
           "text": "street: \"456 Another St\"",
-          "callback_data": "{\"UpdateAt\":\"::address::street\"}"
+          "callback_data": "{\"UpdateAt\":\"/address/street\"}"
         }
       ]
     ]
@@ -427,33 +427,17 @@ mod tests {
       [
         {
           "text": "..",
-          "callback_data": "::"
+          "callback_data": "{\"Go\":\"/\"}"
         }
       ],
       [
-        {
-          "text": "[0] \"alice@example.com\"",
-          "callback_data": "::emails::0"
-        }
-      ],
-      [
-        {
-          "text": "[1] \"a@example.com\"",
-          "callback_data": "::emails::1"
-        }
-      ],
-      [
-        {
-          "text": "..",
-          "callback_data": "::"
-        },
         {
           "text": "Add",
-          "callback_data": "::emails::add"
+          "callback_data": "{\"AddTo\":\"/emails/add\"}"
         },
         {
           "text": "Remove",
-          "callback_data": "::emails::remove"
+          "callback_data": "{\"RemoveFrom\":\"/emails/remove\"}"
         }
       ]
     ]
