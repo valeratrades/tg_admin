@@ -5,13 +5,13 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
-use teloxide::dispatching::dialogue::{self, GetChatId, InMemStorage};
+use teloxide::dispatching::dialogue::{self, InMemStorage};
 use teloxide::dispatching::UpdateHandler;
 use teloxide::prelude::*;
 use teloxide::types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId};
-use teloxide::utils::command::{self, BotCommands};
+use teloxide::utils::command::BotCommands;
 use tracing::info;
-use crate::utils::get_json_type;
+use crate::utils::{get_json_type, value_preview};
 
 type MyDialogue = Dialogue<ChatState, InMemStorage<ChatState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>; //dbg
@@ -34,9 +34,8 @@ struct ValueInput {
 	input_type: InputValueType,
 	value_path: ValuePath,
 }
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum InputValueType {
+pub enum InputValueType {
 	UpdateAt,
 	AddTo,
 	RemoveFrom,
@@ -61,7 +60,7 @@ pub async fn run(settings: Arc<Settings>, data: Arc<RwLock<Data>>) -> Result<()>
 		.enable_ctrlc_handler()
 		.build()
 		.dispatch()
-		.await;
+	.await;
 	Ok(())
 }
 
@@ -107,7 +106,7 @@ async fn admin_handler(bot: Bot, msg: Message, dialogue: MyDialogue, data: Arc<R
 	let (header, markup) = {
 		let data = data.read().unwrap();
 		render_header_and_markup(&data, &value_path)
-	
+
 	};
 	let sent_message = bot.send_message(msg.chat.id, &header)
 		.reply_markup(markup)
@@ -116,53 +115,79 @@ async fn admin_handler(bot: Bot, msg: Message, dialogue: MyDialogue, data: Arc<R
 	Ok(())
 }
 
-async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value_input: ValueInput, data: Arc<RwLock<Data>>) -> HandlerResult {
-	// Should resend the message from which we went to the input state after we update the value and report the change.
-	// Since it's new message, update the Navigation { message_id } accordingly.
-
+async fn value_input_handler(
+	bot: Bot,
+	dialogue: MyDialogue,
+	msg: Message,
+	value_input: ValueInput,
+	data: Arc<RwLock<Data>>,
+) -> HandlerResult {
 	match msg.text().map(ToOwned::to_owned) {
 		Some(new_value) => {
-			let old_value = {
-				let data_lock = data.read().unwrap();
-				data_lock.at(&value_input.value_path).unwrap()
-			};
-			if let Ok(new_value) = serde_json::from_str(&new_value) {
-				if get_json_type(&new_value) == get_json_type(&old_value) {
-					{
-						data.write().unwrap().set_at(&value_input.value_path, new_value.clone());
+			if let Ok(new_value) = serde_json::from_str::<Value>(&new_value) {
+				let update_result = {
+					let mut data_lock = data.write().unwrap();
+					let result = data_lock.update_at(&value_input.value_path, new_value.clone(), value_input.input_type);
+					data_lock.write().unwrap();
+					result
+				};
+
+				match update_result {
+					Ok(_) => {
+						let affirmation_menu = match value_input.input_type {
+							InputValueType::UpdateAt => {
+								format!(
+									"Value of `{}` has been updated to `{}`",
+									&value_input.value_path,
+									&new_value.to_string()
+								)
+							}
+							InputValueType::AddTo => {
+								format!(
+									"`{}` has been added to `{}`",
+									&new_value.to_string(),
+									&value_input.value_path
+								)
+							}
+							InputValueType::RemoveFrom => {
+								format!(
+									"`{}` has been removed from `{}`",
+									&new_value.to_string(),
+									&value_input.value_path
+								)
+							}
+						};
+						bot.send_message(msg.chat.id, affirmation_menu).await?;
+
+						// Resend the nav menu
+						let (header, markup) = {
+							let data = data.read().unwrap();
+							let new_path = match value_input.input_type {
+								InputValueType::UpdateAt => value_input.value_path.parent(),
+								InputValueType::AddTo | InputValueType::RemoveFrom => value_input.value_path,
+							};
+							render_header_and_markup(&data, &new_path)
+						};
+						let sent_message = bot
+							.send_message(dialogue.chat_id(), &header)
+							.reply_markup(markup)
+						.await?;
+						dialogue
+							.update(ChatState::Navigation {
+								message_id: sent_message.id.0,
+						})
+						.await?;
 					}
-					bot.send_message(
-						msg.chat.id,
-						format!(
-							"Value of `{}` has been updated: `{}` -> `{}`",
-							&value_input.value_path,
-							&old_value.to_string(),
-							&new_value.to_string(),
-						),
-					).await?;
-
-					// Resend the nav menu
-					let (header, markup) = {
-						let data = data.read().unwrap();
-						render_header_and_markup(&data, &value_input.value_path.parent())
-					};
-					let sent_message = bot.send_message(dialogue.chat_id(), &header)
-						.reply_markup(markup)
-					.await?;
-					dialogue.update(ChatState::Navigation{message_id: sent_message.id.0}).await?;
-
-				} else {
-					bot.send_message(
-						msg.chat.id,
-						"Invalid value type. Input correct value for the chosen setting.",
-					)
-					.await?;
+				Err(e) => {
+						bot.send_message(
+							msg.chat.id,
+							e,
+						)
+						.await?;
+					}
 				}
 			} else {
-				bot.send_message(
-					msg.chat.id,
-					"Invalid value. Input valid JSON value.",
-				)
+				bot.send_message(msg.chat.id, "Invalid value. Input valid JSON value.")
 				.await?;
 			}
 		}
@@ -176,10 +201,10 @@ async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value
 
 async fn invalid_state_handler(bot: Bot, msg: Message) -> HandlerResult {
 	bot.send_message(msg.chat.id, "Unable to handle the message. Type /help to see available commands.")
-		.await?;
+	.await?;
 	Ok(())
 }
-async fn help_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
+async fn help_handler(bot: Bot, msg: Message) -> HandlerResult {
 	bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
 	Ok(())
 }
@@ -193,8 +218,7 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 				continue_navigation(bot.clone(), dialogue, data, value_path).await?;
 			},
 			CallbackAction::UpdateAt(value_path) => {
-				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone()))).await?; //dbg
-				//- initiate the input state (send the message and return probably)
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone()))).await?;
 				bot.send_message(
 					dialogue.chat_id(),
 					format!(
@@ -208,10 +232,24 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 				).await?;
 			},
 			CallbackAction::AddTo(value_path) => {
-				unimplemented!()
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::AddTo, value_path.clone()))).await?;
+				bot.send_message(
+					dialogue.chat_id(),
+					format!(
+						"You're adding to {}.\n Provide the value to add.",
+						value_path
+					),
+				).await?;
 			},
 			CallbackAction::RemoveFrom(value_path) => {
-				unimplemented!()
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::RemoveFrom, value_path.clone()))).await?;
+				bot.send_message(
+					dialogue.chat_id(),
+					format!(
+						"You're removing from {}.\n Provide exact value to remove.",
+						value_path
+					),
+				).await?;
 			},
 		}
 	}
@@ -276,15 +314,10 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 		Value::Object(map) => {
 			for (key, val) in map {
 				let (display_text, callback_data) = match val {
-					Value::Object(_) => {
-						(format!("{} {}", "{}", key), CallbackAction::Go(value_path.join(key)))
+					Value::Object(_) | Value::Array(_) => {
+						(value_preview(key, val), CallbackAction::Go(value_path.join(key)))
 					},
-					Value::Array(arr) => {
-						(format!("[{}] {}", arr.len(), key), CallbackAction::Go(value_path.join(key)))
-					},
-					_ => {
-						(format!("{}: {}", key, &val.to_string()), CallbackAction::UpdateAt(value_path.join(key)))
-					},
+					_ => (value_preview(key, val), CallbackAction::UpdateAt(value_path.join(key))),
 				};
 
 				let button = InlineKeyboardButton::callback(display_text, serde_json::to_string(&callback_data).unwrap());
@@ -292,7 +325,7 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 			}
 		},
 		Value::Array(arr) => {
-			header = format!("[{}] {}", arr.len(), value_path.basename());
+			header.push_str(&format!(" [{}]", arr.len()));
 
 			let start = arr.len().saturating_sub(25);
 			let mut array_str = "\n```json\n".to_owned();
@@ -303,8 +336,8 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 			header += &array_str;
 
 			let bottom_row = vec![
-				InlineKeyboardButton::callback("Add", serde_json::to_string(&CallbackAction::AddTo(value_path.join("add"))).unwrap()),
-				InlineKeyboardButton::callback("Remove", serde_json::to_string(&CallbackAction::RemoveFrom(value_path.join("remove"))).unwrap()),
+				InlineKeyboardButton::callback("Add", serde_json::to_string(&CallbackAction::AddTo(value_path.clone())).unwrap()),
+				InlineKeyboardButton::callback("Remove", serde_json::to_string(&CallbackAction::RemoveFrom(value_path.clone())).unwrap()),
 			];
 			//TODO!: make doubled horizontally `<-` and `->` buttons that modify starting position of the count
 			keyboard.push(bottom_row);
@@ -327,8 +360,8 @@ mod tests {
 			"name": "Alice",
 			"age": 25,
 			"address": {
-				"street": "456 Another St",
-				"city": "Elsewhere"
+			"street": "456 Another St",
+			"city": "Elsewhere"
 			},
 			"emails": ["alice@example.com", "a@example.com"]
 		});

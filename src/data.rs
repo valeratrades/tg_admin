@@ -1,3 +1,4 @@
+use crate::utils::get_json_type;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -47,19 +48,19 @@ impl Data {
 	}
 
 	/// Write data to the source file
-	pub fn write(&self, new_value: &JsonValue) -> Result<()> {
+	pub fn write(&self) -> Result<()> {
 		let file = File::create(&self.path)?;
 		let mut writer = BufWriter::new(file);
 		let extension = self.path.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
 
 		match extension {
-			"json" | "json5" => serde_json::to_writer(writer, new_value).context("Failed to write JSON file")?,
+			"json" | "json5" => serde_json::to_writer(writer, &self.inner).context("Failed to write JSON file")?,
 			"yaml" | "yml" => {
-				let yaml_value: YamlValue = serde_json::from_value(new_value.clone()).context("Failed to convert JSON to YAML")?;
+				let yaml_value: YamlValue = serde_json::from_value(self.inner.clone()).context("Failed to convert JSON to YAML")?;
 				serde_yaml::to_writer(writer, &yaml_value).context("Failed to write YAML file")?
 			}
 			"toml" => {
-				let toml_value: TomlValue = serde_json::from_value(new_value.clone()).context("Failed to convert JSON to TOML")?;
+				let toml_value: TomlValue = serde_json::from_value(self.inner.clone()).context("Failed to convert JSON to TOML")?;
 				writer.write_all(toml::to_string(&toml_value).context("Failed to write TOML file")?.as_bytes())?;
 			}
 			_ => return Err(anyhow::anyhow!("Unsupported file format")),
@@ -82,15 +83,75 @@ impl Data {
 		Some(current.clone())
 	}
 
-	pub fn set_at(&mut self, level: &ValuePath, value: JsonValue) {
-		let mut current = &mut self.inner;
-		for part in level.to_vec().iter().take(level.to_vec().len() - 1) {
-			current = current.get_mut(part).unwrap();
-		}
-		current[level.to_vec().last().unwrap()] = value;
-		self.write(&self.inner).unwrap();
+	pub fn update(&mut self, new_value: JsonValue) {
+		self.inner = new_value;
 	}
 
+	pub fn update_at<UA>(&mut self, level: &ValuePath, new_value: JsonValue, into_action: UA) -> Result<(), String>
+	where
+		UA: Into<UpdateAction>,
+	{
+		let mut current = &mut self.inner;
+		let path = level.to_vec();
+		let action = into_action.into();
+
+		for (i, part) in path.iter().enumerate() {
+			if i == path.len() - 1 {
+				// We're at the last element, so we apply the update action
+				let obj = current.as_object_mut().unwrap();
+				match action {
+					UpdateAction::Set => {
+						obj.insert(part.clone(), new_value);
+					}
+					UpdateAction::AddTo => {
+						let existing = obj.get_mut(part).unwrap();
+						if let JsonValue::Array(existing_arr) = existing {
+							if !existing_arr.is_empty() && get_json_type(&existing_arr[0]) != get_json_type(&new_value) {
+								return Err(format!(
+									"Type mismatch: Expected {}, got {}",
+									get_json_type(&existing_arr[0]),
+									get_json_type(&new_value)
+								));
+							}
+							existing_arr.push(new_value);
+						} else {
+							panic!("Target is not an array");
+						}
+					}
+					UpdateAction::RemoveFrom => {
+						dbg!(&part);
+						let existing = obj.get_mut(part).unwrap();
+						if let JsonValue::Array(existing_arr) = existing {
+							if existing_arr.is_empty() {
+								return Err("Cannot remove from an empty array".to_string());
+							}
+							if get_json_type(&existing_arr[0]) != get_json_type(&new_value) {
+								return Err(format!(
+									"Type mismatch: Expected {}, got {}",
+									get_json_type(&existing_arr[0]),
+									get_json_type(&new_value)
+								));
+							}
+							let initial_len = existing_arr.len();
+							existing_arr.retain(|item| item != &new_value);
+							if existing_arr.len() == initial_len {
+								return Err("Value not found in the array".to_string());
+							}
+						} else {
+							panic!("Target is not an array");
+						}
+					}
+				}
+				return Ok(());
+			} else {
+				// We're not at the last element, so we navigate to the next level
+				current = current.get_mut(part).unwrap();
+			}
+		}
+		panic!("Empty path");
+	}
+
+	#[doc(hidden)]
 	pub fn mock(value: JsonValue) -> Self {
 		Self::new(value, PathBuf::new())
 	}
@@ -98,6 +159,21 @@ impl Data {
 impl AsRef<JsonValue> for Data {
 	fn as_ref(&self) -> &JsonValue {
 		&self.inner
+	}
+}
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub enum UpdateAction {
+	Set,
+	AddTo,
+	RemoveFrom,
+}
+impl From<crate::telegram::InputValueType> for UpdateAction {
+	fn from(action: crate::telegram::InputValueType) -> Self {
+		match action {
+			crate::telegram::InputValueType::UpdateAt => Self::Set,
+			crate::telegram::InputValueType::AddTo => Self::AddTo,
+			crate::telegram::InputValueType::RemoveFrom => Self::RemoveFrom,
+		}
 	}
 }
 
@@ -182,18 +258,31 @@ impl std::fmt::Display for ValuePath {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use serde_json::json;
 	use std::fs::{create_dir_all, write};
 	use tempfile::tempdir;
 
 	fn generate_test_data(format: &str) -> (PathBuf, String) {
 		let dir = tempdir().unwrap();
 		let path = dir.path().join(format!("test_data.{}", format));
+
+		let json_value = json!({
+			"key": "value",
+			"number": 42,
+			"array_of_numbers": [1, 2, 3],
+			"array_of_strings": ["a", "b", "c"]
+		});
+
 		let content = match format {
-			"json" => r#"{"key": "value", "number": 42,}"#.to_string(), // trailing comma, as we're using interpreting using json5
-			"yaml" | "yml" => r#"key: value\nnumber: 42"#.replace("\\n", "\n"),
-			"toml" => r#"key = "value"\nnumber = 42"#.replace("\\n", "\n"),
+			"json" => serde_json::to_string_pretty(&json_value).unwrap(),
+			"yaml" | "yml" => serde_yaml::to_string(&json_value).unwrap(),
+			"toml" => {
+				let toml_value: toml::Value = serde_json::from_value(json_value).unwrap();
+				toml::to_string(&toml_value).unwrap()
+			}
 			_ => panic!("Unsupported format"),
 		};
+
 		(path.to_path_buf(), content)
 	}
 
@@ -208,7 +297,7 @@ mod tests {
 
 			write(&path, content)?;
 
-			let data = Data::load(&path)?;
+			let mut data = Data::load(&path)?;
 			assert_eq!(data.as_ref()["key"], "value");
 			assert_eq!(data.as_ref()["number"], 42);
 
@@ -216,13 +305,87 @@ mod tests {
 			if let Some(obj) = new_inner.as_object_mut() {
 				obj.insert("key".to_string(), JsonValue::String("new_value".to_string()));
 			}
-			data.write(&new_inner)?;
+			data.update(new_inner);
+			data.write()?;
 
 			let data = Data::load(&path)?;
 			assert_eq!(data.as_ref()["key"], "new_value", "(Format: {})", format);
 			assert_eq!(data.as_ref()["number"], 42, "(Format: {})", format);
 		}
 		Ok(())
+	}
+
+	#[test]
+	fn test_data_update_at() {
+		let formats = vec!["json", "yaml", "yml", "toml"];
+		for format in formats {
+			let (path, content) = generate_test_data(format);
+
+			let dir = path.parent().unwrap();
+			create_dir_all(dir).unwrap();
+
+			write(&path, content).unwrap();
+
+			let mut data = Data::load(&path).unwrap();
+
+			// Test UpdateAction::Set
+			assert!(data
+				.update_at(&ValuePath::from("key"), JsonValue::String("updated_value".to_string()), UpdateAction::Set)
+				.is_ok());
+			assert_eq!(data.as_ref()["key"], "updated_value", "(Format: {})", format);
+
+			// Test UpdateAction::AddTo for numbers
+			let numbers_path = ValuePath::from("array_of_numbers");
+			assert!(data.update_at(&numbers_path, JsonValue::Number(4.into()), UpdateAction::AddTo).is_ok());
+			assert_eq!(
+				data.as_ref()["array_of_numbers"],
+				JsonValue::Array(vec![1, 2, 3, 4].into_iter().map(|n| JsonValue::Number(n.into())).collect()),
+				"(Format: {})",
+				format
+			);
+
+			// Test UpdateAction::AddTo for strings
+			let strings_path = ValuePath::from("array_of_strings");
+			assert!(data.update_at(&strings_path, JsonValue::String("d".to_string()), UpdateAction::AddTo).is_ok());
+			assert_eq!(
+				data.as_ref()["array_of_strings"],
+				JsonValue::Array(vec!["a", "b", "c", "d"].into_iter().map(|s| JsonValue::String(s.to_string())).collect()),
+				"(Format: {})",
+				format
+			);
+
+			// Test UpdateAction::RemoveFrom for numbers
+			assert!(data.update_at(&numbers_path, JsonValue::Number(2.into()), UpdateAction::RemoveFrom).is_ok());
+			assert_eq!(
+				data.as_ref()["array_of_numbers"],
+				JsonValue::Array(vec![1, 3, 4].into_iter().map(|n| JsonValue::Number(n.into())).collect()),
+				"(Format: {})",
+				format
+			);
+
+			// Test error cases
+			assert!(data
+				.update_at(&numbers_path, JsonValue::String("not a number".to_string()), UpdateAction::AddTo)
+				.is_err());
+			assert!(data.update_at(&numbers_path, JsonValue::Number(5.into()), UpdateAction::RemoveFrom).is_err());
+			data.write().unwrap();
+
+			// Verify persistence
+			let reloaded_data = Data::load(&path).unwrap();
+			assert_eq!(reloaded_data.as_ref()["key"], "updated_value", "(Format: {})", format);
+			assert_eq!(
+				reloaded_data.as_ref()["array_of_numbers"],
+				JsonValue::Array(vec![1, 3, 4].into_iter().map(|n| JsonValue::Number(n.into())).collect()),
+				"(Format: {})",
+				format
+			);
+			assert_eq!(
+				reloaded_data.as_ref()["array_of_strings"],
+				JsonValue::Array(vec!["a", "b", "c", "d"].into_iter().map(|s| JsonValue::String(s.to_string())).collect()),
+				"(Format: {})",
+				format
+			);
+		}
 	}
 
 	#[test]
