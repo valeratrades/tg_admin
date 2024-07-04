@@ -466,11 +466,11 @@ mod tests {
       [
         {
           "text": "Add",
-          "callback_data": "{\"AddTo\":\"/emails/add\"}"
+          "callback_data": "{\"AddTo\":\"/emails\"}"
         },
         {
           "text": "Remove",
-          "callback_data": "{\"RemoveFrom\":\"/emails/remove\"}"
+          "callback_data": "{\"RemoveFrom\":\"/emails\"}"
         }
       ]
     ]
