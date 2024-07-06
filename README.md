@@ -13,18 +13,24 @@ Util to control configuration settings via a telegram bot.
     <h2>Installation<h2>
   </summary>
 
-unimplemented!()
-</details>
-
-<details>
-  <summary>
-    <h2>Usage<h2>
-  </summary>
-
-unimplemented!()
+Ensure Rust is installed, then cargo-install the binary:
+```sh
+which rustup || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cargo install --path . --root /usr/bin/
+```
 </details>
 <!-- markdownlint-restore -->
 
+## Usage
+All commands are accessible via a `-h` help message request.
+Main use-case is managing a config file that is in use by the target application.
+Generalises to all popular config formats.
+
+### Example
+```sh
+tg_admin watch -t "${THE_BOT_TOKEN}" ./config/config.json
+```
+// in paths `~` for home directory is supported, but only for linux.
 
 <br>
 
