@@ -3,9 +3,9 @@
 #![allow(clippy::comparison_to_empty)]
 #![feature(trait_alias)]
 #![feature(type_changing_struct_update)]
-use std::sync::{Arc, RwLock};
 use clap::{Args, Parser, Subcommand};
-use settings::Settings;
+use settings::{Settings, SettingsFlags};
+use std::sync::{Arc, RwLock};
 use v_utils::io::ExpandedPath;
 pub mod data;
 pub mod settings;
@@ -15,8 +15,6 @@ pub mod utils;
 #[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-	#[arg(long, default_value = "~/.config/tg_admin.toml")]
-	config: ExpandedPath,
 	#[command(subcommand)]
 	command: Commands,
 }
@@ -39,28 +37,24 @@ impl Default for Commands {
 pub struct ManageArgs {
 	/// Path to the target file
 	path: ExpandedPath,
-	/// Override token in config
-	#[arg(short, long)]
-	tg_token: Option<String>,
-	/// Users with admin rights
-	#[arg(short, long)]
-	admin_list: Option<Vec<u64>>,
+	#[clap(flatten)]
+	settings_flags: SettingsFlags,
 }
 
 #[tokio::main]
 async fn main() {
-	v_utils::utils::init_subscriber();
+	v_utils::utils::init_subscriber(v_utils::utils::LogDestination::default());
 	let cli = Cli::parse();
-	let app_config = match Settings::new_with_cli(&cli) {
-		Ok(config) => config,
-		Err(e) => {
-			eprintln!("Error: Failed to initialize settings with CLI arguments. Details: {}", e);
-			std::process::exit(1);
-		}
-	};
 
 	match &cli.command {
 		Commands::Manage(args) => {
+			let app_config = match Settings::try_build(args.settings_flags.clone()) {
+				Ok(config) => config,
+				Err(e) => {
+					eprintln!("Error: Failed to initialize settings. Details: {}", e);
+					std::process::exit(1);
+				}
+			};
 			let target_data = match data::Data::load(args.path.as_ref()) {
 				Ok(data) => data,
 				Err(e) => {

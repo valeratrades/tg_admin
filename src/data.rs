@@ -1,5 +1,4 @@
 use crate::utils::get_json_type;
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
@@ -10,6 +9,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 use toml::Value as TomlValue;
+use v_utils::prelude::*;
 
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct Data {
@@ -41,7 +41,7 @@ impl Data {
 				let toml_value: TomlValue = toml::from_str(&content).context("Failed to read TOML file")?;
 				serde_json::to_value(toml_value).context("Failed to convert TOML to JSON")?
 			}
-			_ => return Err(anyhow::anyhow!("Unsupported file format")),
+			_ => return Err(eyre!("Unsupported file format")),
 		};
 
 		Ok(Self::new(data, path.to_path_buf()))
@@ -63,7 +63,7 @@ impl Data {
 				let toml_value: TomlValue = serde_json::from_value(self.inner.clone()).context("Failed to convert JSON to TOML")?;
 				writer.write_all(toml::to_string(&toml_value).context("Failed to write TOML file")?.as_bytes())?;
 			}
-			_ => return Err(anyhow::anyhow!("Unsupported file format")),
+			_ => return Err(eyre!("Unsupported file format")),
 		}
 
 		Ok(())

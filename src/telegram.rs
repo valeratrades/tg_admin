@@ -1,7 +1,6 @@
 use crate::data::{Data, ValuePath};
 use crate::settings::Settings;
-use anyhow::Result;
-//use dptree::HandlerResult;
+use crate::utils::{get_json_type, value_preview};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
@@ -11,12 +10,10 @@ use teloxide::prelude::*;
 use teloxide::types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId};
 use teloxide::utils::command::BotCommands;
 use tracing::info;
-use crate::utils::{get_json_type, value_preview};
+use v_utils::prelude::*;
 
 type MyDialogue = Dialogue<ChatState, InMemStorage<ChatState>>;
-type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>; //dbg
-#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
-struct NavigationMessageId(i32);
+type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -82,7 +79,7 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 		match dialogue.get().await {
 			Ok(Some(ChatState::Unauthorized)) => {
 				if let Some(admin_list) = &settings.admin_list {
-					let user_id = update.user().unwrap().id.0;
+					let user_id = update.from().unwrap().id.0;
 					if !admin_list.contains(&user_id) {
 						return None;  // Not authorized
 					}
@@ -285,11 +282,6 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
-struct More {
-	pub value_path: ValuePath,
-	pub start_at: usize,
-}
 #[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
 enum CallbackAction {
 	Go(ValuePath),
