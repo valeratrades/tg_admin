@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::io::{Read, Write};
+use std::process::Command;
 use std::{
 	fs::File,
 	io::{BufReader, BufWriter},
@@ -41,6 +42,11 @@ impl Data {
 				let toml_value: TomlValue = toml::from_str(&content).context("Failed to read TOML file")?;
 				serde_json::to_value(toml_value).context("Failed to convert TOML to JSON")?
 			}
+			"nix" => {
+				drop(reader); // Close file before running nix eval
+				let json_str = eval_nix_file(path)?;
+				serde_json::from_str(&json_str).context("Failed to parse Nix output as JSON")?
+			}
 			_ => return Err(eyre!("Unsupported file format")),
 		};
 
@@ -62,6 +68,10 @@ impl Data {
 			"toml" => {
 				let toml_value: TomlValue = serde_json::from_value(self.inner.clone()).context("Failed to convert JSON to TOML")?;
 				writer.write_all(toml::to_string(&toml_value).context("Failed to write TOML file")?.as_bytes())?;
+			}
+			"nix" => {
+				let nix_content = json_to_nix_file(&self.inner);
+				writer.write_all(nix_content.as_bytes())?;
 			}
 			_ => return Err(eyre!("Unsupported file format")),
 		}
@@ -156,6 +166,60 @@ impl Data {
 		Self::new(value, PathBuf::new())
 	}
 }
+
+/// Evaluate a Nix file and return the JSON output
+fn eval_nix_file(path: &Path) -> Result<String> {
+	let output = Command::new("nix")
+		.arg("eval")
+		.arg("--json")
+		.arg("--impure")
+		.arg("--expr")
+		.arg(format!("import {}", path.display()))
+		.output()
+		.context("Failed to execute nix command. Is nix installed?")?;
+
+	if !output.status.success() {
+		let stderr = String::from_utf8_lossy(&output.stderr);
+		return Err(eyre!("Nix evaluation failed: {}", stderr));
+	}
+
+	String::from_utf8(output.stdout).context("Nix output is not valid UTF-8")
+}
+
+/// Convert JSON value to a complete Nix file content
+fn json_to_nix_file(json: &JsonValue) -> String {
+	json_to_nix_value(json, 0)
+}
+
+/// Convert JSON value to Nix syntax with proper indentation
+fn json_to_nix_value(json: &JsonValue, indent: usize) -> String {
+	let indent_str = "  ".repeat(indent);
+	let inner_indent = "  ".repeat(indent + 1);
+
+	match json {
+		JsonValue::Null => "null".to_string(),
+		JsonValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+		JsonValue::Number(n) => n.to_string(),
+		JsonValue::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+		JsonValue::Array(arr) => {
+			if arr.is_empty() {
+				"[]".to_string()
+			} else {
+				let items: Vec<String> = arr.iter().map(|v| format!("{}{}", inner_indent, json_to_nix_value(v, indent + 1))).collect();
+				format!("[\n{}\n{}]", items.join("\n"), indent_str)
+			}
+		}
+		JsonValue::Object(obj) => {
+			if obj.is_empty() {
+				"{}".to_string()
+			} else {
+				let items: Vec<String> = obj.iter().map(|(k, v)| format!("{}{} = {};", inner_indent, k, json_to_nix_value(v, indent + 1))).collect();
+				format!("{{\n{}\n{}}}", items.join("\n"), indent_str)
+			}
+		}
+	}
+}
+
 impl AsRef<JsonValue> for Data {
 	fn as_ref(&self) -> &JsonValue {
 		&self.inner

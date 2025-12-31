@@ -1,4 +1,4 @@
-use crate::config::Settings;
+use crate::config::LiveSettings;
 use crate::data::{Data, ValuePath};
 use crate::utils::{get_json_type, value_preview};
 use serde::{Deserialize, Serialize};
@@ -48,8 +48,8 @@ enum Command {
 }
 
 #[tracing::instrument]
-pub async fn run(settings: Arc<Settings>, data: Arc<RwLock<Data>>) -> Result<()> {
-	let token = &settings.tg_token;
+pub async fn run(settings: Arc<LiveSettings>, data: Arc<RwLock<Data>>) -> Result<()> {
+	let token = settings.config()?.tg_token;
 	let bot = Bot::new(token);
 	info!("Starting telegram bot...");
 	Dispatcher::builder(bot, schema())
@@ -76,11 +76,11 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 
 	let callback_query_handler = Update::filter_callback_query().endpoint(callback_query_handler);
 
-	let auth_handler = dptree::filter_map_async(|dialogue: MyDialogue, settings: Arc<Settings>, update: Update| async move {
+	let auth_handler = dptree::filter_map_async(|dialogue: MyDialogue, settings: Arc<LiveSettings>, update: Update| async move {
 		match dialogue.get().await {
 			Ok(Some(ChatState::Unauthorized)) => {
-				if let Some(admin_list) = &settings.admin_list {
-					let user_id = update.from().unwrap().id.0;
+				if let Some(admin_list) = &settings.config().ok()?.admin_list {
+					let user_id = update.from()?.id.0;
 					if !admin_list.contains(&user_id) {
 						return None; // Not authorized
 					}

@@ -4,8 +4,9 @@
 #![feature(trait_alias)]
 #![feature(type_changing_struct_update)]
 use clap::{Args, Parser, Subcommand};
-use config::{Settings, SettingsFlags};
+use config::{LiveSettings, SettingsFlags};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use v_utils::io::ExpandedPath;
 pub mod config;
 pub mod data;
@@ -48,7 +49,7 @@ async fn main() {
 
 	match &cli.command {
 		Commands::Manage(args) => {
-			let app_config = match Settings::try_build(args.settings_flags.clone()) {
+			let app_config = match LiveSettings::new(args.settings_flags.clone(), Duration::from_secs(5)) {
 				Ok(config) => config,
 				Err(e) => {
 					eprintln!("Error: Failed to initialize settings. Details: {}", e);
