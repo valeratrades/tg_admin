@@ -86,6 +86,13 @@ impl Data {
 		Ok(())
 	}
 
+	/// Read raw file contents and return (content, extension)
+	pub fn read_raw(&self) -> Result<(String, String)> {
+		let content = std::fs::read_to_string(&self.path)?;
+		let ext = self.path.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("").to_owned();
+		Ok((content, ext))
+	}
+
 	pub fn at(&self, level: &ValuePath) -> Option<JsonValue> {
 		let mut current = &self.inner;
 		for part in level.to_vec() {

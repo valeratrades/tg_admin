@@ -53,6 +53,10 @@ enum Command {
 	Help,
 	#[command(description = "Open admin panel at the top")]
 	Admin,
+	#[command(description = "Abort current input")]
+	Abort,
+	#[command(description = "Show full config file contents")]
+	Full,
 }
 
 #[tracing::instrument]
@@ -79,7 +83,9 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 
 	let command_handler = teloxide::filter_command::<Command, _>()
 		.branch(case![Command::Help].endpoint(help_handler))
-		.branch(case![Command::Admin].endpoint(admin_handler));
+		.branch(case![Command::Admin].endpoint(admin_handler))
+		.branch(case![Command::Abort].endpoint(abort_handler))
+		.branch(case![Command::Full].endpoint(full_handler));
 
 	let message_handler = Update::filter_message()
 		.branch(command_handler)
@@ -194,6 +200,61 @@ async fn help_handler(bot: Bot, msg: Message) -> HandlerResult {
 	bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
 	Ok(())
 }
+async fn abort_handler(bot: Bot, msg: Message, dialogue: MyDialogue, data: Arc<RwLock<Data>>) -> HandlerResult {
+	let state = dialogue.get().await?.unwrap_or_default();
+	match state {
+		ChatState::Input(value_input) => {
+			bot.send_message(msg.chat.id, "Input aborted.").await?;
+			let (header, markup) = {
+				let data = data.read().unwrap();
+				let path = value_input.value_path.parent();
+				render_header_and_markup(&data, &path)
+			};
+			let sent_message = bot.send_message(dialogue.chat_id(), &header).reply_markup(markup).await?;
+			dialogue.update(ChatState::Navigation { message_id: sent_message.id.0 }).await?;
+		}
+		_ => {
+			bot.send_message(msg.chat.id, "Nothing to abort.").await?;
+		}
+	}
+	Ok(())
+}
+async fn full_handler(bot: Bot, msg: Message, data: Arc<RwLock<Data>>) -> HandlerResult {
+	let read_result = {
+		let data = data.read().unwrap();
+		data.read_raw()
+	};
+	match read_result {
+		Ok((content, ext)) => {
+			let lang = match ext.as_str() {
+				"json" | "json5" => "json",
+				"yaml" | "yml" => "yaml",
+				"toml" => "toml",
+				"nix" => "nix",
+				_ => "",
+			};
+			let escaped = escape_markdown_v2(&content);
+			bot.send_message(msg.chat.id, format!("```{lang}\n{escaped}```"))
+				.parse_mode(teloxide::types::ParseMode::MarkdownV2)
+				.await?;
+		}
+		Err(e) => {
+			bot.send_message(msg.chat.id, format!("Failed to read config file: {e}")).await?;
+		}
+	}
+	Ok(())
+}
+
+fn escape_markdown_v2(s: &str) -> String {
+	let mut result = String::with_capacity(s.len());
+	for c in s.chars() {
+		if matches!(c, '\\' | '`') {
+			result.push('\\');
+		}
+		result.push(c);
+	}
+	result
+}
 
 async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery, data: Arc<RwLock<Data>>) -> HandlerResult {
 	bot.answer_callback_query(q.id.clone()).await?; // normally this is done after, but I like how it stops for a moment before the action is performed. Otherwise looks cut.
@@ -207,7 +268,7 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone()))).await?;
 				bot.send_message(
 					dialogue.chat_id(),
-					format!("You're updating `{}: {}`.\n Insert the new value.", &value_path.basename(), {
+					format!("You're updating `{}: {}`.\nInsert the new value, or /abort to cancel.", &value_path.basename(), {
 						let data_lock = data.read().unwrap();
 						get_json_type(&data_lock.at(&value_path).unwrap())
 					}),
@@ -216,13 +277,16 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 			}
 			CallbackAction::AddTo(value_path) => {
 				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::AddTo, value_path.clone()))).await?;
-				bot.send_message(dialogue.chat_id(), format!("You're adding to {}.\n Provide the value to add.", value_path))
+				bot.send_message(dialogue.chat_id(), format!("You're adding to {value_path}.\nProvide the value to add, or /abort to cancel."))
 					.await?;
 			}
 			CallbackAction::RemoveFrom(value_path) => {
 				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::RemoveFrom, value_path.clone()))).await?;
-				bot.send_message(dialogue.chat_id(), format!("You're removing from {}.\n Provide exact value to remove.", value_path))
-					.await?;
+				bot.send_message(
+					dialogue.chat_id(),
+					format!("You're removing from {value_path}.\nProvide exact value to remove, or /abort to cancel."),
+				)
+				.await?;
 			}
 		}
 	}
