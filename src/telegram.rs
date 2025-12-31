@@ -1,5 +1,5 @@
+use crate::config::Settings;
 use crate::data::{Data, ValuePath};
-use crate::settings::Settings;
 use crate::utils::{get_json_type, value_preview};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,7 +15,6 @@ use v_utils::prelude::*;
 type MyDialogue = Dialogue<ChatState, InMemStorage<ChatState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 enum ChatState {
 	/// Most actions are prohibited from this state. Other states can be reached only through authorization from here.
@@ -23,7 +22,9 @@ enum ChatState {
 	Unauthorized,
 	/// Dummy state, only here to not have to spawn Navigation with random value on authorization.
 	Authorized,
-	Navigation { message_id: i32 },
+	Navigation {
+		message_id: i32,
+	},
 	Input(ValueInput),
 }
 #[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,7 +58,7 @@ pub async fn run(settings: Arc<Settings>, data: Arc<RwLock<Data>>) -> Result<()>
 		.enable_ctrlc_handler()
 		.build()
 		.dispatch()
-	.await;
+		.await;
 	Ok(())
 }
 
@@ -81,14 +82,14 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 				if let Some(admin_list) = &settings.admin_list {
 					let user_id = update.from().unwrap().id.0;
 					if !admin_list.contains(&user_id) {
-						return None;  // Not authorized
+						return None; // Not authorized
 					}
 				}
 				dialogue.update(ChatState::Authorized).await.ok()?;
-				Some(())  // Authorized
-			},
-			Ok(Some(_)) => Some(()),  // Already authorized
-			_ => None,  // Error or no state, treat as unauthorized
+				Some(()) // Authorized
+			}
+			Ok(Some(_)) => Some(()), // Already authorized
+			_ => None,               // Error or no state, treat as unauthorized
 		}
 	});
 
@@ -103,22 +104,13 @@ async fn admin_handler(bot: Bot, msg: Message, dialogue: MyDialogue, data: Arc<R
 	let (header, markup) = {
 		let data = data.read().unwrap();
 		render_header_and_markup(&data, &value_path)
-
 	};
-	let sent_message = bot.send_message(msg.chat.id, &header)
-		.reply_markup(markup)
-	.await?;
+	let sent_message = bot.send_message(msg.chat.id, &header).reply_markup(markup).await?;
 	dialogue.update(ChatState::Navigation { message_id: sent_message.id.0 }).await?;
 	Ok(())
 }
 
-async fn value_input_handler(
-	bot: Bot,
-	dialogue: MyDialogue,
-	msg: Message,
-	value_input: ValueInput,
-	data: Arc<RwLock<Data>>,
-) -> HandlerResult {
+async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value_input: ValueInput, data: Arc<RwLock<Data>>) -> HandlerResult {
 	match msg.text().map(ToOwned::to_owned) {
 		Some(new_value) => {
 			if let Ok(new_value) = serde_json::from_str::<Value>(&new_value) {
@@ -133,25 +125,13 @@ async fn value_input_handler(
 					Ok(_) => {
 						let affirmation_menu = match value_input.input_type {
 							InputValueType::UpdateAt => {
-								format!(
-									"Value of `{}` has been updated to `{}`",
-									&value_input.value_path,
-									&new_value.to_string()
-								)
+								format!("Value of `{}` has been updated to `{}`", &value_input.value_path, &new_value.to_string())
 							}
 							InputValueType::AddTo => {
-								format!(
-									"`{}` has been added to `{}`",
-									&new_value.to_string(),
-									&value_input.value_path
-								)
+								format!("`{}` has been added to `{}`", &new_value.to_string(), &value_input.value_path)
 							}
 							InputValueType::RemoveFrom => {
-								format!(
-									"`{}` has been removed from `{}`",
-									&new_value.to_string(),
-									&value_input.value_path
-								)
+								format!("`{}` has been removed from `{}`", &new_value.to_string(), &value_input.value_path)
 							}
 						};
 						bot.send_message(msg.chat.id, affirmation_menu).await?;
@@ -165,32 +145,19 @@ async fn value_input_handler(
 							};
 							render_header_and_markup(&data, &new_path)
 						};
-						let sent_message = bot
-							.send_message(dialogue.chat_id(), &header)
-							.reply_markup(markup)
-						.await?;
-						dialogue
-							.update(ChatState::Navigation {
-								message_id: sent_message.id.0,
-						})
-						.await?;
+						let sent_message = bot.send_message(dialogue.chat_id(), &header).reply_markup(markup).await?;
+						dialogue.update(ChatState::Navigation { message_id: sent_message.id.0 }).await?;
 					}
-				Err(e) => {
-						bot.send_message(
-							msg.chat.id,
-							e,
-						)
-						.await?;
+					Err(e) => {
+						bot.send_message(msg.chat.id, e).await?;
 					}
 				}
 			} else {
-				bot.send_message(msg.chat.id, "Invalid value. Input valid JSON value.")
-				.await?;
+				bot.send_message(msg.chat.id, "Invalid value. Input valid JSON value.").await?;
 			}
 		}
 		None => {
-			bot.send_message(msg.chat.id, "Please send the new value.")
-			.await?;
+			bot.send_message(msg.chat.id, "Please send the new value.").await?;
 		}
 	}
 	Ok(())
@@ -198,7 +165,7 @@ async fn value_input_handler(
 
 async fn invalid_state_handler(bot: Bot, msg: Message) -> HandlerResult {
 	bot.send_message(msg.chat.id, "Unable to handle the message. Type /help to see available commands.")
-	.await?;
+		.await?;
 	Ok(())
 }
 async fn help_handler(bot: Bot, msg: Message) -> HandlerResult {
@@ -213,41 +180,37 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 		match action {
 			CallbackAction::Go(value_path) => {
 				continue_navigation(bot.clone(), dialogue, data, value_path).await?;
-			},
+			}
 			CallbackAction::UpdateAt(value_path) => {
-				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone()))).await?;
+				dialogue
+					.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone())))
+					.await?;
 				bot.send_message(
 					dialogue.chat_id(),
-					format!(
-						"You're updating `{}: {}`.\n Insert the new value.",
-						&value_path.basename(),
-						{
-							let data_lock = data.read().unwrap();
-							get_json_type(&data_lock.at(&value_path).unwrap())
-						}
-					),
-				).await?;
-			},
+					format!("You're updating `{}: {}`.\n Insert the new value.", &value_path.basename(), {
+						let data_lock = data.read().unwrap();
+						get_json_type(&data_lock.at(&value_path).unwrap())
+					}),
+				)
+				.await?;
+			}
 			CallbackAction::AddTo(value_path) => {
-				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::AddTo, value_path.clone()))).await?;
-				bot.send_message(
-					dialogue.chat_id(),
-					format!(
-						"You're adding to {}.\n Provide the value to add.",
-						value_path
-					),
-				).await?;
-			},
+				dialogue
+					.update(ChatState::Input(ValueInput::new(InputValueType::AddTo, value_path.clone())))
+					.await?;
+				bot.send_message(dialogue.chat_id(), format!("You're adding to {}.\n Provide the value to add.", value_path))
+					.await?;
+			}
 			CallbackAction::RemoveFrom(value_path) => {
-				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::RemoveFrom, value_path.clone()))).await?;
+				dialogue
+					.update(ChatState::Input(ValueInput::new(InputValueType::RemoveFrom, value_path.clone())))
+					.await?;
 				bot.send_message(
 					dialogue.chat_id(),
-					format!(
-						"You're removing from {}.\n Provide exact value to remove.",
-						value_path
-					),
-				).await?;
-			},
+					format!("You're removing from {}.\n Provide exact value to remove.", value_path),
+				)
+				.await?;
+			}
 		}
 	}
 	Ok(())
@@ -265,17 +228,16 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 		_ => unreachable!(),
 	};
 
-	match bot.edit_message_text(dialogue.chat_id(), MessageId(message_id), &header)
+	match bot
+		.edit_message_text(dialogue.chat_id(), MessageId(message_id), &header)
 		.reply_markup(markup.clone())
-	.await
+		.await
 	{
 		Ok(_) => Ok(()),
 		//TODO!: assert that the err is about message being too old, as it's the only recoverable one.
 		Err(err) => {
 			dbg!(err);
-			let sent_message = bot.send_message(dialogue.chat_id(), &header)
-				.reply_markup(markup)
-			.await?;
+			let sent_message = bot.send_message(dialogue.chat_id(), &header).reply_markup(markup).await?;
 			dialogue.update(ChatState::Navigation { message_id: sent_message.id.0 }).await?;
 			Ok(())
 		}
@@ -306,16 +268,14 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 		Value::Object(map) => {
 			for (key, val) in map {
 				let (display_text, callback_data) = match val {
-					Value::Object(_) | Value::Array(_) => {
-						(value_preview(key, val), CallbackAction::Go(value_path.join(key)))
-					},
+					Value::Object(_) | Value::Array(_) => (value_preview(key, val), CallbackAction::Go(value_path.join(key))),
 					_ => (value_preview(key, val), CallbackAction::UpdateAt(value_path.join(key))),
 				};
 
 				let button = InlineKeyboardButton::callback(display_text, serde_json::to_string(&callback_data).unwrap());
 				keyboard.push(vec![button]);
 			}
-		},
+		}
 		Value::Array(arr) => {
 			header.push_str(&format!(" [{}]", arr.len()));
 
@@ -333,7 +293,7 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 			];
 			//TODO!: make doubled horizontally `<-` and `->` buttons that modify starting position of the count
 			keyboard.push(bottom_row);
-		},
+		}
 		_ => {
 			unreachable!();
 		}
@@ -439,10 +399,7 @@ mod tests {
 		value_path.push("emails");
 		let (h, r) = render_header_and_markup(&data, &value_path);
 
-		insta::assert_snapshot!(
-			h,
-			"Admin Menu",
-		);
+		insta::assert_snapshot!(h, "Admin Menu",);
 
 		insta::assert_json_snapshot!(
 			r,

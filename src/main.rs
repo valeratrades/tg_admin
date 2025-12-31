@@ -4,11 +4,11 @@
 #![feature(trait_alias)]
 #![feature(type_changing_struct_update)]
 use clap::{Args, Parser, Subcommand};
-use settings::{Settings, SettingsFlags};
+use config::{Settings, SettingsFlags};
 use std::sync::{Arc, RwLock};
 use v_utils::io::ExpandedPath;
+pub mod config;
 pub mod data;
-pub mod settings;
 pub mod telegram;
 pub mod utils;
 
