@@ -1,6 +1,6 @@
 [package]
 name = "tg_admin"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "tg interface to change local structured data"
 rust-version = "1.81"
