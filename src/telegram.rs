@@ -1,21 +1,29 @@
-use crate::config::LiveSettings;
-use crate::data::{Data, ValuePath};
-use crate::utils::{get_json_type, value_preview};
+use std::sync::{Arc, RwLock};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, RwLock};
-use teloxide::dispatching::dialogue::{self, InMemStorage};
-use teloxide::dispatching::UpdateHandler;
-use teloxide::prelude::*;
-use teloxide::types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId};
-use teloxide::utils::command::BotCommands;
+use teloxide::{
+	dispatching::{
+		UpdateHandler,
+		dialogue::{self, InMemStorage},
+	},
+	prelude::*,
+	types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId},
+	utils::command::BotCommands,
+};
 use tracing::info;
 use v_utils::prelude::*;
+
+use crate::{
+	config::LiveSettings,
+	data::{Data, ValuePath},
+	utils::{get_json_type, value_preview},
+};
 
 type MyDialogue = Dialogue<ChatState, InMemStorage<ChatState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 enum ChatState {
 	/// Most actions are prohibited from this state. Other states can be reached only through authorization from here.
 	#[default]
@@ -27,12 +35,12 @@ enum ChatState {
 	},
 	Input(ValueInput),
 }
-#[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, derive_new::new)]
 struct ValueInput {
 	input_type: InputValueType,
 	value_path: ValuePath,
 }
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum InputValueType {
 	UpdateAt,
 	AddTo,
@@ -164,8 +172,7 @@ async fn value_input_handler(bot: Bot, dialogue: MyDialogue, msg: Message, value
 }
 
 async fn invalid_state_handler(bot: Bot, msg: Message) -> HandlerResult {
-	bot.send_message(msg.chat.id, "Unable to handle the message. Type /help to see available commands.")
-		.await?;
+	bot.send_message(msg.chat.id, "Unable to handle the message. Type /help to see available commands.").await?;
 	Ok(())
 }
 async fn help_handler(bot: Bot, msg: Message) -> HandlerResult {
@@ -182,9 +189,7 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 				continue_navigation(bot.clone(), dialogue, data, value_path).await?;
 			}
 			CallbackAction::UpdateAt(value_path) => {
-				dialogue
-					.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone())))
-					.await?;
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::UpdateAt, value_path.clone()))).await?;
 				bot.send_message(
 					dialogue.chat_id(),
 					format!("You're updating `{}: {}`.\n Insert the new value.", &value_path.basename(), {
@@ -195,21 +200,14 @@ async fn callback_query_handler(bot: Bot, dialogue: MyDialogue, q: CallbackQuery
 				.await?;
 			}
 			CallbackAction::AddTo(value_path) => {
-				dialogue
-					.update(ChatState::Input(ValueInput::new(InputValueType::AddTo, value_path.clone())))
-					.await?;
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::AddTo, value_path.clone()))).await?;
 				bot.send_message(dialogue.chat_id(), format!("You're adding to {}.\n Provide the value to add.", value_path))
 					.await?;
 			}
 			CallbackAction::RemoveFrom(value_path) => {
-				dialogue
-					.update(ChatState::Input(ValueInput::new(InputValueType::RemoveFrom, value_path.clone())))
+				dialogue.update(ChatState::Input(ValueInput::new(InputValueType::RemoveFrom, value_path.clone()))).await?;
+				bot.send_message(dialogue.chat_id(), format!("You're removing from {}.\n Provide exact value to remove.", value_path))
 					.await?;
-				bot.send_message(
-					dialogue.chat_id(),
-					format!("You're removing from {}.\n Provide exact value to remove.", value_path),
-				)
-				.await?;
 			}
 		}
 	}
@@ -228,11 +226,7 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 		_ => unreachable!(),
 	};
 
-	match bot
-		.edit_message_text(dialogue.chat_id(), MessageId(message_id), &header)
-		.reply_markup(markup.clone())
-		.await
-	{
+	match bot.edit_message_text(dialogue.chat_id(), MessageId(message_id), &header).reply_markup(markup.clone()).await {
 		Ok(_) => Ok(()),
 		//TODO!: assert that the err is about message being too old, as it's the only recoverable one.
 		Err(err) => {
@@ -244,7 +238,7 @@ async fn continue_navigation(bot: Bot, dialogue: MyDialogue, data: Arc<RwLock<Da
 	}
 }
 
-#[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, derive_new::new)]
 enum CallbackAction {
 	Go(ValuePath),
 	UpdateAt(ValuePath),
@@ -265,7 +259,7 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 	}
 
 	match current_value_at_path {
-		Value::Object(map) => {
+		Value::Object(map) =>
 			for (key, val) in map {
 				let (display_text, callback_data) = match val {
 					Value::Object(_) | Value::Array(_) => (value_preview(key, val), CallbackAction::Go(value_path.join(key))),
@@ -274,8 +268,7 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 
 				let button = InlineKeyboardButton::callback(display_text, serde_json::to_string(&callback_data).unwrap());
 				keyboard.push(vec![button]);
-			}
-		}
+			},
 		Value::Array(arr) => {
 			header.push_str(&format!(" [{}]", arr.len()));
 
@@ -304,8 +297,9 @@ fn render_header_and_markup(data: &Data, value_path: &ValuePath) -> (String, Inl
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use serde_json::json;
+
+	use super::*;
 
 	fn gen_data() -> (Data, ValuePath) {
 		let json_value = json!({

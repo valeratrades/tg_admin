@@ -1,16 +1,17 @@
-use crate::utils::get_json_type;
+use std::{
+	fs::File,
+	io::{BufReader, BufWriter, Read, Write},
+	path::{Path, PathBuf},
+	process::Command,
+};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
-use std::io::{Read, Write};
-use std::process::Command;
-use std::{
-	fs::File,
-	io::{BufReader, BufWriter},
-	path::{Path, PathBuf},
-};
 use toml::Value as TomlValue;
 use v_utils::prelude::*;
+
+use crate::utils::get_json_type;
 
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct Data {
@@ -99,8 +100,7 @@ impl Data {
 
 	pub fn update_at<UA>(&mut self, level: &ValuePath, new_value: JsonValue, into_action: UA) -> Result<(), String>
 	where
-		UA: Into<UpdateAction>,
-	{
+		UA: Into<UpdateAction>, {
 		let mut current = &mut self.inner;
 		let path = level.to_vec();
 		let action = into_action.into();
@@ -117,11 +117,7 @@ impl Data {
 						let existing = obj.get_mut(part).unwrap();
 						if let JsonValue::Array(existing_arr) = existing {
 							if !existing_arr.is_empty() && get_json_type(&existing_arr[0]) != get_json_type(&new_value) {
-								return Err(format!(
-									"Type mismatch: Expected {}, got {}",
-									get_json_type(&existing_arr[0]),
-									get_json_type(&new_value)
-								));
+								return Err(format!("Type mismatch: Expected {}, got {}", get_json_type(&existing_arr[0]), get_json_type(&new_value)));
 							}
 							existing_arr.push(new_value);
 						} else {
@@ -136,11 +132,7 @@ impl Data {
 								return Err("Cannot remove from an empty array".to_string());
 							}
 							if get_json_type(&existing_arr[0]) != get_json_type(&new_value) {
-								return Err(format!(
-									"Type mismatch: Expected {}, got {}",
-									get_json_type(&existing_arr[0]),
-									get_json_type(&new_value)
-								));
+								return Err(format!("Type mismatch: Expected {}, got {}", get_json_type(&existing_arr[0]), get_json_type(&new_value)));
 							}
 							let initial_len = existing_arr.len();
 							existing_arr.retain(|item| item != &new_value);
@@ -201,22 +193,20 @@ fn json_to_nix_value(json: &JsonValue, indent: usize) -> String {
 		JsonValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
 		JsonValue::Number(n) => n.to_string(),
 		JsonValue::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
-		JsonValue::Array(arr) => {
+		JsonValue::Array(arr) =>
 			if arr.is_empty() {
 				"[]".to_string()
 			} else {
 				let items: Vec<String> = arr.iter().map(|v| format!("{}{}", inner_indent, json_to_nix_value(v, indent + 1))).collect();
 				format!("[\n{}\n{}]", items.join("\n"), indent_str)
-			}
-		}
-		JsonValue::Object(obj) => {
+			},
+		JsonValue::Object(obj) =>
 			if obj.is_empty() {
 				"{}".to_string()
 			} else {
 				let items: Vec<String> = obj.iter().map(|(k, v)| format!("{}{} = {};", inner_indent, k, json_to_nix_value(v, indent + 1))).collect();
 				format!("{{\n{}\n{}}}", items.join("\n"), indent_str)
-			}
-		}
+			},
 	}
 }
 
@@ -225,7 +215,7 @@ impl AsRef<JsonValue> for Data {
 		&self.inner
 	}
 }
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UpdateAction {
 	Set,
 	AddTo,
@@ -242,7 +232,7 @@ impl From<crate::telegram::InputValueType> for UpdateAction {
 }
 
 /// Callback data must never be empty, so 0 level is "/" and not ""
-#[derive(Clone, Debug, derive_new::new, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, derive_new::new)]
 pub struct ValuePath(String);
 impl ValuePath {
 	pub fn push(&mut self, part: &str) {
@@ -321,10 +311,12 @@ impl std::fmt::Display for ValuePath {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use serde_json::json;
 	use std::fs::{create_dir_all, write};
+
+	use serde_json::json;
 	use tempfile::tempdir;
+
+	use super::*;
 
 	fn generate_test_data(format: &str) -> (PathBuf, String) {
 		let dir = tempdir().unwrap();
@@ -393,9 +385,7 @@ mod tests {
 			let mut data = Data::load(&path).unwrap();
 
 			// Test UpdateAction::Set
-			assert!(data
-				.update_at(&ValuePath::from("key"), JsonValue::String("updated_value".to_string()), UpdateAction::Set)
-				.is_ok());
+			assert!(data.update_at(&ValuePath::from("key"), JsonValue::String("updated_value".to_string()), UpdateAction::Set).is_ok());
 			assert_eq!(data.as_ref()["key"], "updated_value", "(Format: {})", format);
 
 			// Test UpdateAction::AddTo for numbers
@@ -428,9 +418,7 @@ mod tests {
 			);
 
 			// Test error cases
-			assert!(data
-				.update_at(&numbers_path, JsonValue::String("not a number".to_string()), UpdateAction::AddTo)
-				.is_err());
+			assert!(data.update_at(&numbers_path, JsonValue::String("not a number".to_string()), UpdateAction::AddTo).is_err());
 			assert!(data.update_at(&numbers_path, JsonValue::Number(5.into()), UpdateAction::RemoveFrom).is_err());
 			data.write().unwrap();
 

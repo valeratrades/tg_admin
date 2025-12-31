@@ -3,23 +3,26 @@
 #![allow(clippy::comparison_to_empty)]
 #![feature(trait_alias)]
 #![feature(type_changing_struct_update)]
+use std::{
+	sync::{Arc, RwLock},
+	time::Duration,
+};
+
 use clap::{Args, Parser, Subcommand};
 use config::{LiveSettings, SettingsFlags};
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use v_utils::io::ExpandedPath;
 pub mod config;
 pub mod data;
 pub mod telegram;
 pub mod utils;
 
-#[derive(Parser, Debug, Default)]
+#[derive(Debug, Default, Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
 	#[command(subcommand)]
 	command: Commands,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Debug, Subcommand)]
 pub enum Commands {
 	/// Start the server allowing to change the config at the specified path using telegram.
 	///Ex
@@ -63,12 +66,10 @@ async fn main() {
 					std::process::exit(1);
 				}
 			};
-			telegram::run(Arc::new(app_config), Arc::new(RwLock::new(target_data)))
-				.await
-				.unwrap_or_else(|e| {
-					eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
-					std::process::exit(1);
-				})
+			telegram::run(Arc::new(app_config), Arc::new(RwLock::new(target_data))).await.unwrap_or_else(|e| {
+				eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
+				std::process::exit(1);
+			})
 		}
 	}
 }
