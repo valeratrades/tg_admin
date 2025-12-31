@@ -47,7 +47,7 @@ pub struct ManageArgs {
 
 #[tokio::main]
 async fn main() {
-	v_utils::utils::init_subscriber(v_utils::utils::LogDestination::default());
+	v_utils::clientside!();
 	let cli = Cli::parse();
 
 	match &cli.command {
@@ -55,19 +55,19 @@ async fn main() {
 			let app_config = match LiveSettings::new(args.settings_flags.clone(), Duration::from_secs(5)) {
 				Ok(config) => config,
 				Err(e) => {
-					eprintln!("Error: Failed to initialize settings. Details: {}", e);
+					eprintln!("Error: Failed to initialize settings. Details: {e}");
 					std::process::exit(1);
 				}
 			};
 			let target_data = match data::Data::load(args.path.as_ref()) {
 				Ok(data) => data,
 				Err(e) => {
-					eprintln!("Error: Failed to load data from the target file. Details: {}", e);
+					eprintln!("Error: Failed to load data from the target file. Details: {e}");
 					std::process::exit(1);
 				}
 			};
 			telegram::run(Arc::new(app_config), Arc::new(RwLock::new(target_data))).await.unwrap_or_else(|e| {
-				eprintln!("Error: Failed to start the telegram bot. Details: {}", e);
+				eprintln!("Error: Failed to start the telegram bot. Details: {e}");
 				std::process::exit(1);
 			})
 		}

@@ -59,6 +59,10 @@ enum Command {
 pub async fn run(settings: Arc<LiveSettings>, data: Arc<RwLock<Data>>) -> Result<()> {
 	let token = settings.config()?.tg_token;
 	let bot = Bot::new(token);
+	let me = bot.get_me().await?;
+	let bot_username = me.username();
+	println!("Interfacing with bot: @{bot_username}");
+	bot.set_my_commands(Command::bot_commands()).await?;
 	info!("Starting telegram bot...");
 	Dispatcher::builder(bot, schema())
 		.dependencies(dptree::deps![data, settings, InMemStorage::<ChatState>::new()])
