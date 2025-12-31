@@ -88,9 +88,20 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 		match dialogue.get().await {
 			Ok(Some(ChatState::Unauthorized)) => {
 				if let Some(admin_list) = &settings.config().ok()?.admin_list {
-					let user_id = update.from()?.id.0;
-					if !admin_list.contains(&user_id) {
-						return None; // Not authorized
+					let user = update.from()?;
+					let user_id = user.id.0;
+					let user_username = user.username.as_deref();
+
+					let is_authorized = admin_list.iter().any(|admin| match admin {
+						tg::Username::Id(id) => *id == user_id,
+						tg::Username::At(name) => user_username.is_some_and(|u| {
+							let name_normalized = name.strip_prefix('@').unwrap_or(name);
+							u.eq_ignore_ascii_case(name_normalized)
+						}),
+					});
+
+					if !is_authorized {
+						return None;
 					}
 				}
 				dialogue.update(ChatState::Authorized).await.ok()?;
@@ -393,7 +404,13 @@ mod tests {
 		value_path.push("emails");
 		let (h, r) = render_header_and_markup(&data, &value_path);
 
-		insta::assert_snapshot!(h, "Admin Menu",);
+		insta::assert_snapshot!(h, @r###"
+/emails [2]
+```json
+"alice@example.com"
+"a@example.com"
+```
+"###);
 
 		insta::assert_json_snapshot!(
 			r,
