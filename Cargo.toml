@@ -11,14 +11,6 @@ repository = "https://github.com/valeratrades/tg_admin"
 [package.metadata.cargo-machete]
 ignored = ["derive-new", "serde", "tokio"]
 
-#? still not sure if these do anything
-[lints.clippy]
-get_first = "allow"
-len_zero = "allow"
-
-[dev-dependencies]
-tempfile = { version = "3.24.0", features = ["nightly"] }
-
 [dependencies]
 clap = { version = "^4.5.53", features = ["derive"] }
 derive-new = "^0.7.0"
@@ -36,3 +28,11 @@ tokio = { version = "1.48.0", features = ["full", "tracing"] }
 toml = "0.9.10"
 tracing = "0.1.44"
 v_utils = { version = "^2.15.14", features = ["io", "macros", "cli"] }
+
+[dev-dependencies]
+tempfile = { version = "3.24.0", features = ["nightly"] }
+
+#? still not sure if these do anything
+[lints.clippy]
+get_first = "allow"
+len_zero = "allow"
