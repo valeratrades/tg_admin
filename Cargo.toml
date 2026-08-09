@@ -38,3 +38,6 @@ tempfile = { version = "3.24.0", features = ["nightly"] }
 [lints.clippy]
 get_first = "allow"
 len_zero = "allow"
+
+[lints.rust]
+unused_features = "allow"

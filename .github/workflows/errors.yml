@@ -1,18 +1,51 @@
 env:
   CARGO_INCREMENTAL: '0'
   CARGO_NET_RETRY: '10'
+  RUSTC_WRAPPER: ''
   RUSTUP_MAX_RETRIES: '10'
   RUST_BACKTRACE: short
 jobs:
+  load_nix:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@main
+      with:
+        extra-conf: lazy-trees = true
+    - name: Setup Nix cache
+      uses: nix-community/cache-nix-action@v7
+      with:
+        primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-
+    - name: Cache packages
+      run: '# Pre-fetch packages into nix store so they''re cached for dependent jobs
+
+        # Use nix-shell which properly sets up env vars like PKG_CONFIG_PATH
+
+        nix-shell -p mold pkg-config openssl.out openssl.dev --run "echo packages
+        cached"
+
+        '
   pre_ci:
-    uses: valeratrades/.github/.github/workflows/pre_ci.yml@master
+    uses: valeratrades/.github/.github/workflows/pre_ci.yml@main
   rust-tests:
     if: needs.pre_ci.outputs.continue
     name: Rust ${{matrix.rust}}
-    needs: pre_ci
+    needs:
+    - load_nix
+    - pre_ci
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@main
+      with:
+        extra-conf: lazy-trees = true
+    - name: Setup Nix cache
+      uses: nix-community/cache-nix-action@v7
+      with:
+        primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{matrix.rust}}
@@ -28,15 +61,30 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: modified-cargo-files
-    - run: cargo update
-    - run: cargo check
-    - run: cargo test
+    - run: nix-shell -p mold pkg-config openssl.out openssl.dev --command "export
+        LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && cargo update"
+    - run: nix-shell -p mold pkg-config openssl.out openssl.dev --command "export
+        LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && cargo check"
+    - run: nix-shell -p mold pkg-config openssl.out openssl.dev --command "export
+        LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\"
+        && cargo test"
     strategy:
       fail-fast: false
       matrix:
         rust:
         - nightly
-        - nightly-2025-10-12
+        - nightly-2026-06-29
     timeout-minutes: 45
 name: Errors
 'on':
