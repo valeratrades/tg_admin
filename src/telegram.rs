@@ -23,42 +23,12 @@ use crate::{
 type MyDialogue = Dialogue<ChatState, InMemStorage<ChatState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-enum ChatState {
-	/// Most actions are prohibited from this state. Other states can be reached only through authorization from here.
-	#[default]
-	Unauthorized,
-	/// Dummy state, only here to not have to spawn Navigation with random value on authorization.
-	Authorized,
-	Navigation {
-		message_id: i32,
-	},
-	Input(ValueInput),
-}
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, derive_new::new)]
-struct ValueInput {
-	input_type: InputValueType,
-	value_path: ValuePath,
-}
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum InputValueType {
 	UpdateAt,
 	AddTo,
 	RemoveFrom,
 }
-#[derive(BotCommands, Clone, Debug)]
-#[command(description = "Commands:", rename_rule = "lowercase")]
-enum Command {
-	#[command(description = "Display all commands")]
-	Help,
-	#[command(description = "Open admin panel at the top")]
-	Admin,
-	#[command(description = "Abort current input")]
-	Abort,
-	#[command(description = "Show full config file contents")]
-	Full,
-}
-
 #[tracing::instrument]
 pub async fn run(settings: Arc<LiveSettings>, data: Arc<RwLock<Data>>) -> Result<()> {
 	let token = settings.config()?.tg_token;
@@ -76,6 +46,35 @@ pub async fn run(settings: Arc<LiveSettings>, data: Arc<RwLock<Data>>) -> Result
 		.dispatch()
 		.await;
 	Ok(())
+}
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+enum ChatState {
+	/// Most actions are prohibited from this state. Other states can be reached only through authorization from here.
+	#[default]
+	Unauthorized,
+	/// Dummy state, only here to not have to spawn Navigation with random value on authorization.
+	Authorized,
+	Navigation {
+		message_id: i32,
+	},
+	Input(ValueInput),
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, derive_new::new)]
+struct ValueInput {
+	input_type: InputValueType,
+	value_path: ValuePath,
+}
+#[derive(BotCommands, Clone, Debug)]
+#[command(description = "Commands:", rename_rule = "lowercase")]
+enum Command {
+	#[command(description = "Display all commands")]
+	Help,
+	#[command(description = "Open admin panel at the top")]
+	Admin,
+	#[command(description = "Abort current input")]
+	Abort,
+	#[command(description = "Show full config file contents")]
+	Full,
 }
 
 fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {

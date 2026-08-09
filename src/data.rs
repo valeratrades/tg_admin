@@ -48,7 +48,7 @@ impl Data {
 				let json_str = eval_nix_file(path)?;
 				serde_json::from_str(&json_str).context("Failed to parse Nix output as JSON")?
 			}
-			_ => return Err(eyre!("Unsupported file format")),
+			_ => bail!("Unsupported file format"),
 		};
 
 		Ok(Self::new(data, path.to_path_buf()))
@@ -74,7 +74,7 @@ impl Data {
 				let nix_content = json_to_nix_file(&self.inner);
 				writer.write_all(nix_content.as_bytes())?;
 			}
-			_ => return Err(eyre!("Unsupported file format")),
+			_ => bail!("Unsupported file format"),
 		}
 
 		Ok(())
@@ -166,78 +166,12 @@ impl Data {
 	}
 }
 
-/// Evaluate a Nix file and return the JSON output
-fn eval_nix_file(path: &Path) -> Result<String> {
-	let output = Command::new("nix")
-		.arg("eval")
-		.arg("--json")
-		.arg("--impure")
-		.arg("--expr")
-		.arg(format!("import {}", path.display()))
-		.output()
-		.context("Failed to execute nix command. Is nix installed?")?;
-
-	if !output.status.success() {
-		let stderr = String::from_utf8_lossy(&output.stderr);
-		return Err(eyre!("Nix evaluation failed: {}", stderr));
-	}
-
-	String::from_utf8(output.stdout).context("Nix output is not valid UTF-8")
-}
-
-/// Convert JSON value to a complete Nix file content
-fn json_to_nix_file(json: &JsonValue) -> String {
-	json_to_nix_value(json, 0)
-}
-
-/// Convert JSON value to Nix syntax with proper indentation
-fn json_to_nix_value(json: &JsonValue, indent: usize) -> String {
-	let indent_str = "  ".repeat(indent);
-	let inner_indent = "  ".repeat(indent + 1);
-
-	match json {
-		JsonValue::Null => "null".to_string(),
-		JsonValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-		JsonValue::Number(n) => n.to_string(),
-		JsonValue::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
-		JsonValue::Array(arr) =>
-			if arr.is_empty() {
-				"[]".to_string()
-			} else {
-				let items: Vec<String> = arr.iter().map(|v| format!("{}{}", inner_indent, json_to_nix_value(v, indent + 1))).collect();
-				format!("[\n{}\n{}]", items.join("\n"), indent_str)
-			},
-		JsonValue::Object(obj) =>
-			if obj.is_empty() {
-				"{}".to_string()
-			} else {
-				let items: Vec<String> = obj.iter().map(|(k, v)| format!("{}{} = {};", inner_indent, k, json_to_nix_value(v, indent + 1))).collect();
-				format!("{{\n{}\n{}}}", items.join("\n"), indent_str)
-			},
-	}
-}
-
-impl AsRef<JsonValue> for Data {
-	fn as_ref(&self) -> &JsonValue {
-		&self.inner
-	}
-}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UpdateAction {
 	Set,
 	AddTo,
 	RemoveFrom,
 }
-impl From<crate::telegram::InputValueType> for UpdateAction {
-	fn from(action: crate::telegram::InputValueType) -> Self {
-		match action {
-			crate::telegram::InputValueType::UpdateAt => Self::Set,
-			crate::telegram::InputValueType::AddTo => Self::AddTo,
-			crate::telegram::InputValueType::RemoveFrom => Self::RemoveFrom,
-		}
-	}
-}
-
 /// Callback data must never be empty, so 0 level is "/" and not ""
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, derive_new::new)]
 pub struct ValuePath(String);
@@ -284,6 +218,72 @@ impl ValuePath {
 		self.0
 	}
 }
+
+/// Evaluate a Nix file and return the JSON output
+fn eval_nix_file(path: &Path) -> Result<String> {
+	let output = Command::new("nix")
+		.arg("eval")
+		.arg("--json")
+		.arg("--impure")
+		.arg("--expr")
+		.arg(format!("import {}", path.display()))
+		.output()
+		.context("Failed to execute nix command. Is nix installed?")?;
+
+	if !output.status.success() {
+		let stderr = String::from_utf8_lossy(&output.stderr);
+		bail!("Nix evaluation failed: {stderr}");
+	}
+
+	String::from_utf8(output.stdout).context("Nix output is not valid UTF-8")
+}
+
+/// Convert JSON value to a complete Nix file content
+fn json_to_nix_file(json: &JsonValue) -> String {
+	json_to_nix_value(json, 0)
+}
+
+/// Convert JSON value to Nix syntax with proper indentation
+fn json_to_nix_value(json: &JsonValue, indent: usize) -> String {
+	let indent_str = "  ".repeat(indent);
+	let inner_indent = "  ".repeat(indent + 1);
+
+	match json {
+		JsonValue::Null => "null".to_string(),
+		JsonValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+		JsonValue::Number(n) => n.to_string(),
+		JsonValue::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+		JsonValue::Array(arr) =>
+			if arr.is_empty() {
+				"[]".to_string()
+			} else {
+				let items: Vec<String> = arr.iter().map(|v| format!("{}{}", inner_indent, json_to_nix_value(v, indent + 1))).collect();
+				format!("[\n{}\n{indent_str}]", items.join("\n"))
+			},
+		JsonValue::Object(obj) =>
+			if obj.is_empty() {
+				"{}".to_string()
+			} else {
+				let items: Vec<String> = obj.iter().map(|(k, v)| format!("{}{} = {};", inner_indent, k, json_to_nix_value(v, indent + 1))).collect();
+				format!("{{\n{}\n{indent_str}}}", items.join("\n"))
+			},
+	}
+}
+
+impl AsRef<JsonValue> for Data {
+	fn as_ref(&self) -> &JsonValue {
+		&self.inner
+	}
+}
+impl From<crate::telegram::InputValueType> for UpdateAction {
+	fn from(action: crate::telegram::InputValueType) -> Self {
+		match action {
+			crate::telegram::InputValueType::UpdateAt => Self::Set,
+			crate::telegram::InputValueType::AddTo => Self::AddTo,
+			crate::telegram::InputValueType::RemoveFrom => Self::RemoveFrom,
+		}
+	}
+}
 impl Default for ValuePath {
 	fn default() -> Self {
 		Self("/".to_string())
@@ -318,7 +318,10 @@ impl std::fmt::Display for ValuePath {
 
 #[cfg(test)]
 mod tests {
-	use std::fs::{create_dir_all, write};
+	use std::{
+		fs::{create_dir_all, write},
+		path::PathBuf,
+	};
 
 	use serde_json::json;
 	use tempfile::tempdir;
@@ -327,7 +330,7 @@ mod tests {
 
 	fn generate_test_data(format: &str) -> (PathBuf, String) {
 		let dir = tempdir().unwrap();
-		let path = dir.path().join(format!("test_data.{}", format));
+		let path = dir.path().join(format!("test_data.{format}"));
 
 		let json_value = json!({
 			"key": "value",
@@ -373,7 +376,7 @@ mod tests {
 
 			let data = Data::load(&path)?;
 			assert_eq!(data.as_ref()["key"], "new_value", "(Format: {})", format);
-			assert_eq!(data.as_ref()["number"], 42, "(Format: {})", format);
+			assert_eq!(data.as_ref()["number"], 42, "(Format: {format})");
 		}
 		Ok(())
 	}
@@ -401,8 +404,7 @@ mod tests {
 			assert_eq!(
 				data.as_ref()["array_of_numbers"],
 				JsonValue::Array(vec![1, 2, 3, 4].into_iter().map(|n| JsonValue::Number(n.into())).collect()),
-				"(Format: {})",
-				format
+				"(Format: {format})"
 			);
 
 			// Test UpdateAction::AddTo for strings
@@ -411,8 +413,7 @@ mod tests {
 			assert_eq!(
 				data.as_ref()["array_of_strings"],
 				JsonValue::Array(vec!["a", "b", "c", "d"].into_iter().map(|s| JsonValue::String(s.to_string())).collect()),
-				"(Format: {})",
-				format
+				"(Format: {format})"
 			);
 
 			// Test UpdateAction::RemoveFrom for numbers
@@ -420,8 +421,7 @@ mod tests {
 			assert_eq!(
 				data.as_ref()["array_of_numbers"],
 				JsonValue::Array(vec![1, 3, 4].into_iter().map(|n| JsonValue::Number(n.into())).collect()),
-				"(Format: {})",
-				format
+				"(Format: {format})"
 			);
 
 			// Test error cases
@@ -435,14 +435,12 @@ mod tests {
 			assert_eq!(
 				reloaded_data.as_ref()["array_of_numbers"],
 				JsonValue::Array(vec![1, 3, 4].into_iter().map(|n| JsonValue::Number(n.into())).collect()),
-				"(Format: {})",
-				format
+				"(Format: {format})"
 			);
 			assert_eq!(
 				reloaded_data.as_ref()["array_of_strings"],
 				JsonValue::Array(vec!["a", "b", "c", "d"].into_iter().map(|s| JsonValue::String(s.to_string())).collect()),
-				"(Format: {})",
-				format
+				"(Format: {format})"
 			);
 		}
 	}

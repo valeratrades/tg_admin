@@ -13,8 +13,8 @@ pub fn get_json_type(value: &Value) -> &str {
 
 pub fn value_preview(key: &String, value: &Value) -> String {
 	match value {
-		Value::Object(_) => format!("{{}} {}", key),
-		Value::Array(arr) => format!("[{}] {}", arr.len(), key),
-		_ => format!("{}: {}", key, &value.to_string()),
+		Value::Object(_) => format!("{{}} {key}"),
+		Value::Array(arr) => format!("[{}] {key}", arr.len()),
+		_ => format!("{key}: {}", &value.to_string()),
 	}
 }
