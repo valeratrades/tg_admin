@@ -37,3 +37,6 @@ len_zero = "allow"
 
 [lints.rust]
 unused_features = "allow"
+
+[lints.cargo]
+non_kebab_case_bins = "allow"
