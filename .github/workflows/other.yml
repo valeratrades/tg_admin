@@ -18,12 +18,20 @@ jobs:
             extra-substituters = file:///tmp/nix-lean-cache
             extra-trusted-substituters = file:///tmp/nix-lean-cache
             require-sigs = false
-      - name: Lean nix cache (built-only paths)
+      - if: github.ref_name != github.event.repository.default_branch
+        name: Restore lean nix cache
+        uses: actions/cache/restore@v5
+        with:
+          key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
+          path: /tmp/nix-lean-cache
+          restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
+      - if: github.ref_name == github.event.repository.default_branch
+        name: Lean nix cache (built-only paths)
         uses: actions/cache@v5
         with:
-          key: nix-lean-${{ runner.os }}-${{ github.run_id }}
+          key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
           path: /tmp/nix-lean-cache
-          restore-keys: nix-lean-${{ runner.os }}-
+          restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
       - name: Cache packages
         run: |
           # Pre-fetch packages into nix store so they're cached for dependent jobs
@@ -52,12 +60,22 @@ jobs:
             extra-substituters = file:///tmp/nix-lean-cache
             extra-trusted-substituters = file:///tmp/nix-lean-cache
             require-sigs = false
-      - name: Lean nix cache (built-only paths)
+      - if: github.ref_name != github.event.repository.default_branch
+        name: Restore lean nix cache
+        uses: actions/cache/restore@v5
+        with:
+          key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
+          path: /tmp/nix-lean-cache
+          restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
+      - if: github.ref_name == github.event.repository.default_branch
+        name: Lean nix cache (built-only paths)
         uses: actions/cache@v5
         with:
-          key: nix-lean-${{ runner.os }}-${{ github.run_id }}
+          key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
           path: /tmp/nix-lean-cache
-          restore-keys: nix-lean-${{ runner.os }}-
+          restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
+      - name: Install tokei
+        run: nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && cargo install tokei"
       - env:
           loc_gist_token: ${{ secrets.loc_gist_token }}
         name: Ensure loc_gist_token secret is configured
@@ -74,30 +92,13 @@ jobs:
             exit 1
           fi
           "
-      - name: Install tokei
-        run: nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && cargo install tokei"
-      - id: count
-        name: Count lines of code
-        run: |-
-          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && # Extract repository name (e.g., \"valeratrades/readme-fw\" -> \"readme-fw\")
-          PNAME=\"\${GITHUB_REPOSITORY##*/}\"
-          echo \"pname=\$PNAME\" >> \$GITHUB_OUTPUT
-
-          LOC=\$(tokei --output json | jq '.Total.code')
-          echo \"loc=\$LOC\" >> \$GITHUB_OUTPUT
-          echo \"Lines of code for \$PNAME: \$LOC\"
-
-          # Generate JSON with project-specific filename
-          echo \"{\\\"schemaVersion\\\": 1, \\\"label\\\": \\\"LoC\\\", \\\"message\\\": \\\"\$LOC\\\", \\\"color\\\": \\\"lightblue\\\"}\" > \${PNAME}-loc.json
-          "
-      - name: Display generated JSON
-        run: nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && cat ${{ steps.count.outputs.pname }}-loc.json"
       - env:
           GH_TOKEN: ${{ secrets.loc_gist_token }}
-        name: Update gist
+        name: Update badge gist
         run: |-
-          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && F=\"${{ steps.count.outputs.pname }}-loc.json\"
-          gh api -X PATCH gists/b48e6f02c61942200e7d1e3eeabf9bcb -f \"files[\$F][content]=\$(cat \"\$F\")\" --silent
+          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && PNAME=\"\${GITHUB_REPOSITORY##*/}\"
+          gh api -X PATCH gists/b48e6f02c61942200e7d1e3eeabf9bcb --silent \\
+          -f \"files[\$PNAME-loc.json][content]={\\\"schemaVersion\\\": 1, \\\"label\\\": \\\"LoC\\\", \\\"message\\\": \\\"\$(tokei --output json | jq .Total.code)\\\", \\\"color\\\": \\\"lightblue\\\"}\"
           "
 name: Other
 on:
