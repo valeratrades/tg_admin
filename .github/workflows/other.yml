@@ -1,45 +1,6 @@
 jobs:
-  load_nix:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Lean cache setup
-        run: |
-          mkdir -p /tmp/nix-lean-cache
-          chmod 0777 /tmp/nix-lean-cache
-          printf '#!/bin/sh\nexport PATH=/nix/var/nix/profiles/default/bin:$PATH\nnix copy --to "file:///tmp/nix-lean-cache?compression=zstd&parallel-compression=true" $OUT_PATHS || true\n' > /tmp/nix-lean-pbh.sh
-          chmod 0755 /tmp/nix-lean-pbh.sh
-        shell: bash
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-        with:
-          extra-conf: |
-            lazy-trees = true
-            post-build-hook = /tmp/nix-lean-pbh.sh
-            extra-substituters = file:///tmp/nix-lean-cache
-            extra-trusted-substituters = file:///tmp/nix-lean-cache
-            require-sigs = false
-      - if: github.ref_name != github.event.repository.default_branch
-        name: Restore lean nix cache
-        uses: actions/cache/restore@v5
-        with:
-          key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
-          path: /tmp/nix-lean-cache
-          restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
-      - if: github.ref_name == github.event.repository.default_branch
-        name: Lean nix cache (built-only paths)
-        uses: actions/cache@v5
-        with:
-          key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
-          path: /tmp/nix-lean-cache
-          restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
-      - name: Cache packages
-        run: |
-          # Pre-fetch packages into nix store so they're cached for dependent jobs
-          # Use nix-shell which properly sets up env vars like PKG_CONFIG_PATH
-          nix-shell -p mold pkg-config openssl.out openssl.dev git --run "echo packages cached"
   loc-badge:
     name: Update LOC Badge
-    needs: load_nix
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -48,7 +9,7 @@ jobs:
         run: |
           mkdir -p /tmp/nix-lean-cache
           chmod 0777 /tmp/nix-lean-cache
-          printf '#!/bin/sh\nexport PATH=/nix/var/nix/profiles/default/bin:$PATH\nnix copy --to "file:///tmp/nix-lean-cache?compression=zstd&parallel-compression=true" $OUT_PATHS || true\n' > /tmp/nix-lean-pbh.sh
+          printf '#!/bin/sh\nexport PATH=/nix/var/nix/profiles/default/bin:$PATH\necho $OUT_PATHS >> /tmp/nix-lean-cache/built\nnix copy --to "file:///tmp/nix-lean-cache?compression=zstd&parallel-compression=true" $OUT_PATHS || true\n' > /tmp/nix-lean-pbh.sh
           chmod 0755 /tmp/nix-lean-pbh.sh
         shell: bash
       - name: Install Nix
@@ -56,8 +17,9 @@ jobs:
         with:
           extra-conf: |
             lazy-trees = true
+            extra-substituters = https://valeratrades.cachix.org file:///tmp/nix-lean-cache
+            extra-trusted-public-keys = valeratrades.cachix.org-1:gXVwhzO5YB+BaiEJYT48qZgzdaErGQew6xtZcz4Fo1Q=
             post-build-hook = /tmp/nix-lean-pbh.sh
-            extra-substituters = file:///tmp/nix-lean-cache
             extra-trusted-substituters = file:///tmp/nix-lean-cache
             require-sigs = false
       - if: github.ref_name != github.event.repository.default_branch
@@ -74,13 +36,15 @@ jobs:
           key: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
           path: /tmp/nix-lean-cache
           restore-keys: nix-lean-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
       - name: Install tokei
-        run: nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && cargo install tokei"
+        run: nix-shell -p mold pkg-config openssl.out openssl.dev git --command "set -e; export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && nix-store --realise /nix/store/4m90mv0fyihsdrnidw8gkgmx6zvd5vqm-tokei-15.0.0 > /dev/null && echo /nix/store/4m90mv0fyihsdrnidw8gkgmx6zvd5vqm-tokei-15.0.0/bin >> \"\$GITHUB_PATH\""
       - env:
           loc_gist_token: ${{ secrets.loc_gist_token }}
         name: Ensure loc_gist_token secret is configured
         run: |-
-          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && if [ -z \"\${loc_gist_token}\" ]; then
+          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "set -e; export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && if [ -z \"\${loc_gist_token}\" ]; then
             echo \"::error::Secret 'loc_gist_token' is not set (empty in this job).\"
             if [ \"${{ github.event.repository.private }}\" = \"true\" ]; then
               echo \"::error::This repo is PRIVATE. On GitHub Free-plan orgs, organization secrets are NOT exposed to private repos — if 'loc_gist_token' is set org-wide it still won't reach here. Fix: set it repo-level (gh secret set loc_gist_token -R ${{ github.repository }}), or upgrade the org to Team/Enterprise.\"
@@ -92,11 +56,12 @@ jobs:
             exit 1
           fi
           "
-      - env:
+      - continue-on-error: true
+        env:
           GH_TOKEN: ${{ secrets.loc_gist_token }}
         name: Update badge gist
         run: |-
-          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && PNAME=\"\${GITHUB_REPOSITORY##*/}\"
+          nix-shell -p mold pkg-config openssl.out openssl.dev git --command "set -e; export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A mold --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A pkg-config --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.out --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && export LD_LIBRARY_PATH=\"\$(nix-build '<nixpkgs>' -A openssl.dev --no-out-link)/lib\${LD_LIBRARY_PATH:+:}\$LD_LIBRARY_PATH\" && PNAME=\"\${GITHUB_REPOSITORY##*/}\"
           gh api -X PATCH gists/b48e6f02c61942200e7d1e3eeabf9bcb --silent \\
           -f \"files[\$PNAME-loc.json][content]={\\\"schemaVersion\\\": 1, \\\"label\\\": \\\"LoC\\\", \\\"message\\\": \\\"\$(tokei --output json | jq .Total.code)\\\", \\\"color\\\": \\\"lightblue\\\"}\"
           "
